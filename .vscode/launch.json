@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Flask with gevent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/AppServer.py",
+            "args": [],
+            "env": {
+                "FLASK_ENV": "development",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "jinja": true,
+            "justMyCode": false,
+            "gevent": true  // 添加 gevent 支持
+        }
+    ]
+}

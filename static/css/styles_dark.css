@@ -1,0 +1,127 @@
+/* static/css/styles.css */
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #1e1e1e 0%, #3a3a3a 100%); /* 深灰渐变 */
+    color: #ffffff; /* 白字 */
+}
+
+.navbar {
+    background: linear-gradient(90deg, #1a2a44 0%, #4a6a85 100%); /* 暗蓝色导航栏 */
+    padding: 15px 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-links li a {
+    color: #ffffff;
+    text-decoration: none;
+    padding: 8px 15px;
+    border-radius: 25px;
+    transition: background-color 0.3s, transform 0.2s, box-shadow 0.3s;
+}
+
+.nav-links li a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 0 10px rgba(163, 191, 250, 0.5); /* 霓虹光效 */
+}
+
+main {
+    padding: 20px;
+}
+
+.container {
+    width: 90%;
+    max-width: none;
+    margin: 0 auto;
+}
+
+h1 {
+    color: #e0e0e0; /* 浅灰标题 */
+    font-size: 32px;
+    margin-bottom: 20px;
+    text-align: center;
+    text-shadow: 1px 1px 5px rgba(163, 191, 250, 0.3);
+}
+
+.controls {
+    background: #2a2a2a; /* 深灰控件 */
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+    margin-bottom: 30px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+    transition: transform 0.3s;
+}
+
+input, select {
+    padding: 10px;
+    border: 2px solid #4a4a4a;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #3a3a3a;
+    color: #ffffff;
+    transition: border-color 0.3s;
+}
+
+input:focus, select:focus {
+    border-color: #a3bffa; /* 霓虹蓝 */
+}
+
+.btn {
+    padding: 10px 20px;
+    background: linear-gradient(90deg, #1a2a44 0%, #a3bffa 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.3s;
+}
+
+.btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(163, 191, 250, 0.6);
+}
+
+.table-container {
+    background: #1e1e1e; /* 黑底 */
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+    padding: 20px;
+    overflow-x: auto;
+}
+
+th {
+    background: linear-gradient(90deg, #1a2a44 0%, #4a6a85 100%);
+    color: #ffffff;
+    padding: 6px;
+}
+
+th:hover {
+    background: linear-gradient(90deg, #15223a 0%, #3a5a75 100%);
+}
+
+td {
+    padding: 6px;
+    border-bottom: 1px solid #4a4a4a;
+    color: #ffffff;
+}
+
+tr:nth-child(even) {
+    background-color: #2a2a2a;
+}
+
+tr:hover {
+    background-color: #3a3a3a;
+}

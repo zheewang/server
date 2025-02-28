@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}MA Strategy Dashboard{% endblock %}
+{% block content %}
+    <div class="container">
+        <h1>MA Strategy Dashboard</h1>
+        <div class="controls">
+            <div>
+                <label for="date">Select Date:</label>
+                <input type="date" id="date" name="date">
+            </div>
+            <div>
+                <label for="typeFilter">Type:</label>
+                <select id="typeFilter" name="typeFilter" onchange="applyFilters()">
+                    <option value="All">All</option>
+                    <!-- JavaScript 将动态填充其他选项 -->
+                </select>
+            </div>
+            <div>
+                <label for="perPage">Items per page:</label>
+                <input type="number" id="perPage" name="perPage" value="30" min="1">
+            </div>
+            <button id="fetchDataBtn" class="btn">Fetch Data</button>
+        </div>
+
+        <div class="table-container">
+            <table id="stockTable">
+                <thead id="tableHeader">
+                    <tr>
+                        <th data-sort="StockCode" data-text="Stock Code">Stock Code</th>
+                        <th data-sort="StockName" data-text="Stock Name">Stock Name</th>
+                        <th data-sort="trading_Date" data-text="Trading Date">Trading Date</th>
+                        <th data-sort="type" data-text="Type">Type</th>
+                        <th data-sort="PopularityRank" data-text="Popularity Rank">Popularity Rank</th>
+                        <th data-sort="TurnoverAmount" data-text="Turnover (亿)">Turnover (亿)</th>
+                        <th data-sort="TurnoverRank" data-text="Turnover Rank">Turnover Rank</th>
+                        <th data-sort="LatestLimitUpDate" data-text="Latest Limit Up Date">Latest Limit Up Date</th>
+                        <th data-sort='ReasonCategory' data-text="Limit Up Reason Category">Limit Up Reason Category</th>
+                        <th data-text="5-Day Candlestick">5-Day Candlestick</th>
+                        <th data-sort="RealtimeChange" data-text="Realtime Change">Realtime Change</th>
+                        <th data-sort="RealtimePrice" data-text="Realtime Price">Realtime Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination">
+            <button id="prevPage" class="btn">Previous</button>
+            <span id="pageInfo"></span>
+            <button id="nextPage" class="btn">Next</button>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script src="/static/js/common.js"></script>
+    <script type="module" src="/static/js/utils.js"></script>
+    <script type="module" src="/static/js/ma_strategy_dashboard.js"></script>    
+    <script>
+        window.HOST = "{{ config['HOST'] }}";
+        window.PORT = "{{ config['PORT'] }}";
+    </script>
+{% endblock %}

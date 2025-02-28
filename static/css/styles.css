@@ -1,0 +1,355 @@
+/* static/css/styles.css */
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    color: #333;
+}
+
+.navbar {
+    background: linear-gradient(90deg, #5B7C99 0%, #A3BFFA 100%);
+    padding: 15px 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-brand a {
+    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    text-decoration: none;
+    letter-spacing: 1px;
+}
+
+.nav-links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 20px;
+}
+
+.nav-links li a {
+    color: white;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 500;
+    padding: 8px 15px;
+    border-radius: 25px;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.nav-links li a:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+main {
+    padding: 20px;
+}
+
+.container {
+    width: 90%;
+    max-width: none;
+    margin: 0 auto;
+}
+
+h1 {
+    color: #2c3e50;
+    font-size: 32px;
+    margin-bottom: 20px;
+    text-align: center;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.controls {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+    transition: transform 0.3s;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.controls:hover {
+    transform: translateY(-5px);
+}
+
+label {
+    font-weight: 500;
+    color: #555;
+}
+
+input, select {
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+    width: 150px; /* 默认宽度 */
+}
+
+/* 调整所有 Select Date 选择框宽度为 80%（150px -> 120px） */
+input[type="date"] {
+    width: 120px;
+}
+
+/* Stock Market Dashboard 的 Sector Code 宽度为一半（150px -> 75px） */
+input#sector_code {
+    width: 75px;
+}
+
+/* MA Strategy Dashboard 的 Type 选择框宽度为 80%（150px -> 120px） */
+select#typeFilter {
+    width: 120px;
+}
+
+/* Limit Up Unfilled Orders Dashboard 的 Search 输入框宽度为 80%（150px -> 120px） */
+input#search {
+    width: 120px;
+}
+
+input:focus, select:focus {
+    border-color: #5B7C99;
+    outline: none;
+}
+
+input#perPage {
+    width: 50px;
+}
+
+.btn {
+    padding: 10px 20px;
+    background: linear-gradient(90deg, #5B7C99 0%, #A3BFFA 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.2s, box-shadow 0.3s;
+}
+
+.btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(91, 124, 153, 0.4);
+}
+
+.btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.table-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1000px;
+}
+
+th {
+    background: linear-gradient(90deg, #5B7C99 0%, #A3BFFA 100%);
+    color: white;
+    padding: 6px;
+    text-align: left;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+}
+
+th:hover {
+    background: linear-gradient(90deg, #4A6A85 0%, #8FADEA 100%);
+}
+
+/* 提高伪元素优先级，确保显示 */
+th.sort-asc::after {
+    content: ' ↑';
+    margin-left: 4px;
+    display: inline-block; /* 确保伪元素渲染 */
+    color: white; /* 与表头文字颜色一致 */
+}
+
+th.sort-desc::after {
+    content: ' ↓';
+    margin-left: 4px;
+    display: inline-block;
+    color: white;
+}
+
+td {
+    padding: 6px;
+    border-bottom: 1px solid #eee;
+    position: relative;
+    vertical-align: middle;
+    white-space: nowrap;
+    font-size: 12px;
+}
+
+tr {
+    height: 20px;
+}
+
+tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+tr:hover {
+    background-color: #f2f2f2;
+    transition: background-color 0.2s;
+}
+
+.pagination {
+    padding: 15px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.pagination span {
+    font-size: 16px;
+    color: #666;
+}
+
+.tooltip {
+    position: absolute;
+    background: gainsboro;
+    color: #000000;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    z-index: 100;
+    display: none;
+    pointer-events: none;
+    width: 320px;
+    left: 50%;
+    top: 0;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+td:hover .tooltip {
+    display: block;
+}
+
+.positive {
+    color: #e74c3c;
+}
+
+.negative {
+    color: #2ecc71;
+}
+
+.highlight-red {
+    color: #ff0000;
+}
+
+#debugOutput {
+    margin-top: 30px;
+    padding: 20px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.no-data {
+    color: #e74c3c;
+    font-style: italic;
+}
+
+.tooltip canvas {
+    width: 200px !important;
+    height: 120px !important;
+    margin-top: 5px;
+}
+
+.candlestick-cell canvas {
+    width: 100px !important;
+    height: 60px !important;
+}
+
+.candlestick-cell .tooltip canvas {
+    width: 300px !important;
+    height: 180px !important;
+}
+
+.select2-container {
+    width: 150px !important;
+}
+
+.hero {
+    text-align: center;
+    padding: 60px 20px;
+    background: linear-gradient(135deg, rgba(91, 124, 153, 0.1) 0%, rgba(163, 191, 250, 0.1) 100%);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    margin-bottom: 40px;
+}
+
+.hero h1 {
+    font-size: 48px;
+    color: #2c3e50;
+    margin-bottom: 20px;
+    text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.hero p {
+    font-size: 18px;
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.hero-links {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.row-count {
+    text-align: right;
+    padding: 5px;
+    font-size: 14px;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .navbar {
+        flex-direction: column;
+        padding: 20px;
+    }
+    .nav-links {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+}

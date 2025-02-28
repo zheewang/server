@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Limit Up Unfilled Orders Dashboard{% endblock %}
+{% block content %}
+    <div class="container">
+        <h1>Limit Up Unfilled Orders Dashboard</h1>
+        <div class="controls">
+            <div>
+                <label for="date">Select Date:</label>
+                <input type="date" id="date" name="date">
+            </div>
+            <div>
+                <label for="streakFilter">Streak Days:</label>
+                <select id="streakFilter" name="streakFilter" onchange="applyFilters()">
+                    <option value="All">All</option>
+                    <!-- JavaScript 将动态填充其他选项 -->
+                </select>
+            </div>
+            <div>
+                <label for="perPage">Items per page:</label>
+                <input type="number" id="perPage" name="perPage" value="30" min="1">
+            </div>
+            <div>
+                <label for="search">Search:</label>
+                <input type="text" id="search" name="search" placeholder="Stock Code or Name" oninput="applyFilters()">
+            </div>
+            <!-- 移除 onclick，改为 JS 绑定 -->
+            <button id="fetchDataBtn" class="btn">Fetch Data</button>
+            <!-- 移除 onclick -->
+            <button id="showAllHiddenBtn" class="btn">Show All Hidden</button>
+        </div>
+
+        <div class="table-container">
+            <table id="stockTable">
+                <thead id="tableHeader">
+                    <tr>
+                        <th data-sort="StockCode" data-text="Stock Code">Stock Code</th>
+                        <th data-sort="StockName" data-text="Stock Name">Stock Name</th>
+                        <th data-text="5-Day Candlestick">5-Day Candlestick</th> <!-- 不排序 -->
+                        <th data-sort="StreakDays" data-text="Streak Days">Streak Days</th>
+                        <th data-sort="OpeningAmount" data-text="Opening Amount">Opening Amount</th>
+                        <th data-sort="LimitUpOrderAmount" data-text="Limit Up Order Amount">Limit Up Order Amount</th>
+                        <th data-sort="FirstLimitUpTime" data-text="First Limit Up Time">First Limit Up Time</th>
+                        <th data-sort="FinalLimitUpTime" data-text="Final Limit Up Time">Final Limit Up Time</th>
+                        <th data-sort="LimitUpOpenTimes" data-text="Limit Up Open Times">Limit Up Open Times</th>
+                        <th data-sort="PopularityRank" data-text="Popularity Rank">Popularity Rank</th>
+                        <th data-sort="TurnoverAmount" data-text="Turnover (亿)">Turnover (亿)</th>
+                        <th data-sort="TurnoverRank" data-text="Turnover Rank">Turnover Rank</th>
+                        <th data-sort='ReasonCategory' data-text="Limit Up Reason Category">Limit Up Reason Category</th> 
+                        <th data-sort="RealtimeChange" data-text="Realtime Change">Realtime Change</th>
+                        <th data-sort="RealtimePrice" data-text="Realtime Price">Realtime Price</th>
+                        <th data-text="Actions">Actions</th> <!-- 不排序 -->
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination">
+            <button id="prevPage" onclick="changePage(-1)" class="btn">Previous</button>
+            <span id="pageInfo"></span>
+            <button id="nextPage" onclick="changePage(1)" class="btn">Next</button>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script src="/static/js/common.js"></script>
+    <script type="module" src="/static/js/utils.js"></script>
+    <script type="module" src="/static/js/limitup_unfilled_orders_dashboard.js"></script>
+    <script>
+        window.HOST = "{{ config['HOST'] }}";
+        window.PORT = "{{ config['PORT'] }}";
+    </script>
+{% endblock %}

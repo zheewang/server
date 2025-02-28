@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Stock Dashboard{% endblock %}
+{% block content %}
+    <div class="container">
+        <h1>Stock Market Dashboard</h1>
+        <div class="controls">
+            <div>
+                <label for="date">Select Date:</label>
+                <input type="date" id="date" name="date">
+            </div>
+            <div>
+                <label for="th_sector_index">THS Sector Type:</label>
+                <select id="th_sector_index" name="th_sector_index">
+                    <option value="">Select a type</option>
+                </select>
+            </div>
+            <div>
+                <label for="sector_name">Sector Name:</label>
+                <select id="sector_name" name="sector_name">
+                    <option value="">Select a sector</option>
+                </select>
+            </div>
+            <div>
+                <label for="sector_code">Sector Code:</label>
+                <input type="text" id="sector_code" name="sector_code" >
+            </div>
+            <div>
+                <label for="perPage">Items per page:</label>
+                <input type="number" id="perPage" name="perPage" value="30" min="1">
+            </div>
+            <!-- 移除 onclick，改为 JS 绑定 -->
+            <button id="fetchDataBtn" class="btn">Fetch Data</button>
+        </div>
+
+        <div class="table-container">
+            <table id="stockTable">
+                <thead id="tableHeader">
+                    <tr>
+                        <th data-sort="StockCode" data-text="Stock Code">Stock Code</th>
+                        <th data-sort="StockName" data-text="Stock Name">Stock Name</th>
+                        <th data-sort="PopularityRank" data-text="Popularity Rank">Popularity Rank</th>
+                        <th data-sort="TurnoverAmount" data-text="Turnover (亿)">Turnover (亿)</th>
+                        <th data-sort="TurnoverRank" data-text="Turnover Rank">Turnover Rank</th>
+                        <th data-sort="LatestLimitUpDate" data-text="Latest Limit Up Date">Latest Limit Up Date</th>
+                        <th data-sort='ReasonCategory' data-text="Limit Up Reason Category">Limit Up Reason Category</th>               
+                        <th data-text="3-Day Candlestick">3-Day Candlestick</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination">
+            <button id="prevPage" onclick="changePage(-1)" class="btn">Previous</button>
+            <span id="pageInfo"></span>
+            <button id="nextPage" onclick="changePage(1)" class="btn">Next</button>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script src="/static/js/common.js"></script>
+    <script type="module" src="/static/js/utils.js"></script>
+    <script type="module" src="/static/js/stock_dashboard.js"></script>
+    <script>
+        window.HOST = "{{ config['HOST'] }}";
+        window.PORT = "{{ config['PORT'] }}";
+    </script>    
+{% endblock %}

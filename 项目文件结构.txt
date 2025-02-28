@@ -1,0 +1,16 @@
+project/
+├── static/
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       ├── scripts.js
+│       └── stock_dashboard.js
+├── templates/
+│   ├── base.html
+│   ├── index.html
+│   └── stock_dashboard.html
+├── blueprints/
+│   ├── sectors.py
+│   └── stock_data.py
+├── config.py              # 新增配置文件
+└── app.py

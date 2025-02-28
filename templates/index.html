@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/">Dashboard</a>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/stock_dashboard">Stock Dashboard</a></li>
+            <li><a href="/ma_strategy_dashboard">MA Strategy Dashboard</a></li>
+            <li><a href="/custom_stock_dashboard">Realtime Dashboard</a></li>
+            <li><a href="/limitup_unfilled_orders_dashboard">Limitup Unfilled_orders Dashboard</a></li>
+        </ul>
+    </nav>
+    <main>
+        <div class="container">
+            <div class="hero">
+                <h1>Welcome to the Dashboard</h1>
+                <p>Explore real-time stock data and analytics.</p>
+                <div class="hero-links">
+                    <a href="/stock_dashboard" class="btn">Stock Dashboard</a>
+                    <a href="/ma_strategy_dashboard" class="btn">MA Strategy Dashboard</a>
+                    <a href="/custom_stock_dashboard" class="btn">Realtime Dashboard</a>
+                    <a href="/limitup_unfilled_orders_dashboard" class="btn">Limitup Unfilled Orders</a>
+                </div>
+                <!-- 新增 Clear All Cache 按钮 -->
+                <button id="clearAllCacheBtn" class="btn" style="margin-top: 20px;">Clear All Cache</button>
+            </div>
+        </div>
+    </main>
+    <script type="module">
+        // 清除所有缓存的逻辑
+        document.getElementById('clearAllCacheBtn').addEventListener('click', function() {
+            console.log('Clear All Cache button clicked');
+            localStorage.clear();
+            // 也可以只清除特定的缓存
+            // localStorage.removeItem('custom_stock_dashboard_state');
+            console.log('All local storage cleared');
+            alert('All cached data has been cleared!');
+        });
+    </script>
+</body>
+</html>
