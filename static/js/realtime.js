@@ -4,7 +4,9 @@
 if (!window.io) {
     throw new Error('Socket.IO library not loaded');
 }
-const socket = io.connect(`http://${window.HOST}:${window.PORT}`, { 
+
+// 此处必须加上监听特定的event命名空间，否则会导致连接失败
+const socket = io.connect(`http://${window.HOST}:${window.PORT}/stocks_realtime`, { 
     transports: ['websocket', 'polling'], 
     reconnection: true, 
     reconnectionAttempts: 5 
@@ -22,15 +24,15 @@ function initRealtime() {
 }
 
 // 注册实时更新处理函数
-function registerUpdateHandler(namespace, dataKey, handler) {
-    const key = `${namespace}:${dataKey}`;
+function registerUpdateHandler(event, dataKey, handler) {
+    const key = `${event}:${dataKey}`;
     if (updateHandlers.has(key)) {
         console.warn(`Handler for ${key} already registered, overwriting`);
     }
     updateHandlers.set(key, handler);
 
-    socket.on(`${namespace}_update`, (data) => {
-        console.log(`Received ${namespace}_update:`, data);
+    socket.on(`${event}`, (data) => {
+        console.log(`Received ${event}:`, data);
         if (handler) {
             handler(data);
         }

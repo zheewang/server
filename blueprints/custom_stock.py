@@ -13,6 +13,18 @@ import gevent
 
 logger = logging.getLogger(__name__)
 
+# 假设你已经全局配置了 logging
+def disable_logging_temporarily():
+    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
+
+def enable_logging_again():
+    logging.disable(logging.NOTSET)  # 重新启用所有日志
+
+# 在你的特定页面或模块中调用 disable_logging_temporarily()
+# 在需要重新启用日志时调用 enable_logging_again()
+disable_logging_temporarily()
+
+
 custom_stock_bp = Blueprint('custom_stock', __name__)
 
 # 全局变量存储股票代码
@@ -58,6 +70,7 @@ def write_stock_codes(stock_codes_to_write, file_path='stocks.txt'):
         return False
 
 @custom_stock_bp.route('/custom_stock_data', methods=['GET'])
+@cache.cached(timeout=300, query_string=True)
 def get_custom_stock_data():
     global stock_codes
     new_stock_code = request.args.get('new_stock_code')
@@ -180,7 +193,3 @@ def save_stock_codes():
         logger.error(f"Error saving stock codes: {str(e)}")
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
-@socketio.on('connect', namespace='/realtime')
-def handle_connect():
-    print('Client connected to /realtime namespace')
-    logger.error("Client connected to /realtime namespace")

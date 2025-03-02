@@ -20,7 +20,7 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'custom_stock_dashboard';
 
 document.addEventListener('DOMContentLoaded', function() {
-    const savedState = JSON.parse(localStorage.getItem(`${PAGE_KEY}_state`));
+    const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
@@ -43,8 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
     bindPerPageInput(pagination, stockData, renderTable, saveState);
     bindSortEvents(stockData, sortRules, renderTable, saveState);
 
-    // 注册实时更新处理
-    registerUpdateHandler('realtime', 'StockCode', (data) => {
+    // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
+    registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         updatePagination(pagination, stockData.length);
         renderTable();
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchDataBtn.addEventListener('click', function() {
             console.log('Fetch Data button clicked');
             // 可选：清除本地缓存并重置状态
-            localStorage.removeItem(`${PAGE_KEY}_state`);
+            sessionStorage.removeItem(`${PAGE_KEY}_state`);
             console.log('Local storage cleared');
             pagination = initPagination();
             stockData = [];
@@ -277,6 +277,6 @@ function saveState() {
         deletedStocks: [...deletedStocks],
         newStockCode: document.getElementById('newStockCode').value
     };
-    localStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
+    sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
     console.log('State saved to localStorage');
 }

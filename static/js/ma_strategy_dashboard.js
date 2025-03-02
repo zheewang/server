@@ -22,9 +22,19 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'ma_strategy_dashboard';
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, registering handler');
+    // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
+    registerUpdateHandler('realtime_update', 'StockCode', (data) => {
+        //console.log('Updating stockData with:', data);
+        updateData(data, stockData, 'StockCode');
+        applyFilters();
+        renderTable();
+        saveState();
+    });
+
     makeTableSortable();
 
-    const savedState = JSON.parse(localStorage.getItem(`${PAGE_KEY}_state`));
+    const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
@@ -44,14 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
 
-    // 注册实时更新处理
-    registerUpdateHandler('ma_strategy', 'StockCode', (data) => {
-        console.log('Raw ma_strategy data received:', data);
-        updateData(data, stockData, 'StockCode');
-        applyFilters();
-        renderTable();
-        saveState();
-    });
+  
 
     bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
@@ -287,5 +290,5 @@ function saveState() {
         date: document.getElementById('date').value,
         typeFilter: document.getElementById('typeFilter').value
     };
-    localStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
+    sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
 }

@@ -1,7 +1,8 @@
 from flask_socketio import emit
 import gevent.lock
 import gevent.queue
-from app_init import socketio, app, db
+from app_init import  app, db
+from app_init import socketio
 import tushare as ts
 import gevent
 import time
@@ -11,6 +12,16 @@ import yaml
 from datetime import datetime, time as dt_time
 
 logger = app.logger
+# 假设你已经全局配置了 logging
+def disable_logging_temporarily():
+    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
+
+def enable_logging_again():
+    logging.disable(logging.NOTSET)  # 重新启用所有日志
+
+# 在你的特定页面或模块中调用 disable_logging_temporarily()
+# 在需要重新启用日志时调用 enable_logging_again()
+enable_logging_again()
 
 # 加载配置文件
 with open('config.yaml', 'r') as f:
@@ -139,7 +150,7 @@ class RealtimeUpdater:
                             logger.error(f"[{caller}] Failed to fetch data for {code} after {max_retries} retries")
                     gevent.sleep(1 / rate_limit)
 
-            logger.debug(f"[{caller}] Final updated_data from {source}: {updated_data}")
+            logger.debug(f"[{caller}] Final updated_data from {source}")
             return updated_data
         except Exception as e:
             logger.error(f"[{caller}] Error fetching realtime data from {source}: {str(e)}", exc_info=True)
@@ -187,28 +198,32 @@ class RealtimeUpdater:
                 logger.debug(f"[global] Task running: {self.running}")
                 with stocks_pool_lock:
                     local_stock_codes = list(stocks_pool.keys())
-                logger.debug(f"[global] Stocks to fetch: {local_stock_codes}")
+                
                 if local_stock_codes:
                     with app.app_context():
+                        logger.debug("[global] Calling get_realtime_data")
                         updated_data = self.get_realtime_data(local_stock_codes, caller='data_task')
-                        logger.debug(f"[global] Returned updated_data: {updated_data}")
+                        logger.debug(f"[global] Returned updated_data")
                         if updated_data:
                             with self.realtime_lock:
                                 self.realtime_data.clear()
                                 self.realtime_data.update(updated_data)
-                            socketio.emit('realtime_update', updated_data, namespace='/realtime')
-                            socketio.emit('limitup_realtime_update', updated_data, namespace='/limitup_realtime')
-                            socketio.emit('ma_strategy_update', updated_data, namespace='/ma_strategy')
-                            logger.debug(f"[global] Emitted updates: {updated_data}")
+                            #发送实时更新处理, 第一个参数是特定的event名称
+                            socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
+                            logger.debug(f"[global] realtime Emitted ")
                         else:
                             logger.warning("[global] No data returned from get_realtime_data")
-                gevent.sleep(1)
+                gevent.sleep(10)
             except Exception as e:
                 logger.error(f"[global] Error in data update task: {str(e)}", exc_info=True)
                 gevent.sleep(5)  # 继续循环
+        logger.info("[global] Data update task stopped")
 
     def start(self):
         if not self.running:
+            with app.app_context():
+                self.sync_latest_stocks()  # 确保启动时填充
+                logger.debug(f"[global] Initial stocks_pool after sync: {stocks_pool}")
             self.running = True
             socketio.start_background_task(self.pool_update_task)
             socketio.start_background_task(self.data_update_task)

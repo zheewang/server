@@ -3,8 +3,6 @@ from flask import Blueprint
 from app_init import app, db
 import logging
 
-common_bp = Blueprint('common', __name__)
-
 logger = logging.getLogger(__name__)
 
 def get_nearest_trading_date(target_date, TradingDay):

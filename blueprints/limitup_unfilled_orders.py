@@ -7,9 +7,19 @@ from datetime import datetime, timedelta
 import pytz
 import logging
 import gevent
-from flask import session
 
 logger = logging.getLogger(__name__)
+
+# 假设你已经全局配置了 logging
+def disable_logging_temporarily():
+    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
+
+def enable_logging_again():
+    logging.disable(logging.NOTSET)  # 重新启用所有日志
+
+# 在你的特定页面或模块中调用 disable_logging_temporarily()
+# 在需要重新启用日志时调用 enable_logging_again()
+enable_logging_again()
 
 limitup_unfilled_orders_bp = Blueprint('limitup_unfilled_orders', __name__)
 
@@ -68,11 +78,7 @@ def get_limitup_unfilled_orders_data():
         app.logger.error("Date parameter is missing")
         return jsonify({'error': 'Date parameter is required'}), 400
 
-    cache_key = f"limitup_unfilled_orders_data_{date_str}"
-    if cache_key in session:
-        logger.debug(f"Returning cached data for {date_str}")
-        return jsonify(session[cache_key])
-    
+   
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d')
         app.logger.debug(f"Processing request for date: {date_str}")
@@ -176,7 +182,7 @@ def get_limitup_unfilled_orders_data():
                 stock_data.append(stock_info)
 
             app.logger.debug(f"Returning {len(stock_data)} records")
-            session[cache_key] = stock_data  # 存入 Session
+
             return jsonify(stock_data)
 
     except ValueError:
@@ -186,7 +192,3 @@ def get_limitup_unfilled_orders_data():
         app.logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
-@socketio.on('connect', namespace='/limitup_realtime')
-def handle_connect():
-    print('Client connected to /limitup_realtime namespace')
-    logger.error("Client connected to /limitup_realtime namespace")

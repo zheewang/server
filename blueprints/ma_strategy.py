@@ -1,13 +1,23 @@
 from flask import Blueprint, jsonify, request
-from app_init import app, db, cache, socketio,MaStrategies, StockPopularityRanking, StockTurnoverRanking, DailyLimitUpStocks, DailyStockData, TradingDay
+from app_init import app, db, cache, MaStrategies, StockPopularityRanking, StockTurnoverRanking, DailyLimitUpStocks, DailyStockData, TradingDay
 from blueprints.common import get_nearest_trading_date, get_recent_trading_dates, merge_stock_data
 from datetime import datetime
 import logging
 from blueprints.stock_pool_manager import  update_stocks_pool,get_realtime_data
 import gevent
-from flask import session
 
 logger = logging.getLogger(__name__)
+# 假设你已经全局配置了 logging
+def disable_logging_temporarily():
+    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
+
+def enable_logging_again():
+    logging.disable(logging.NOTSET)  # 重新启用所有日志
+
+# 在你的特定页面或模块中调用 disable_logging_temporarily()
+# 在需要重新启用日志时调用 enable_logging_again()
+enable_logging_again()
+
 
 ma_strategy_bp = Blueprint('ma_strategy', __name__)
 
@@ -22,16 +32,13 @@ def get_latest_ma_strategy_stocks():
     return local_stock_codes 
 
 @ma_strategy_bp.route('/ma_strategy_data', methods=['GET'])
+@cache.cached(timeout=30, query_string=True)
 def get_ma_strategy_data():
     date_str = request.args.get('date')
     
     if not date_str:
         return jsonify({'error': 'Date parameter is required'}), 400
 
-    cache_key = f"ma_strategy_data_{date_str}"
-    if cache_key in session:
-        logger.debug(f"Returning cached data for {date_str}")
-        return jsonify(session[cache_key])
 
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d')
@@ -124,7 +131,6 @@ def get_ma_strategy_data():
 
             logger.debug(f"Returning {len(stock_data)} records")
 
-            session[cache_key] = stock_data
             return jsonify(stock_data)
 
     except ValueError:
@@ -133,8 +139,4 @@ def get_ma_strategy_data():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
-    
-@socketio.on('connect', namespace='/ma_strategy')
-def handle_connect():
-    print('Client connected to /ma_strategy namespace')
-    logger.error("Client connected to /ma_strategy namespace")
+

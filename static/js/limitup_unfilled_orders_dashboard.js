@@ -15,8 +15,8 @@ let pagination = initPagination();
 let stockData = [];
 let filteredData = [];
 let sortRules = [];
-let pinnedStocks = new Set(JSON.parse(localStorage.getItem('pinnedStocks') || '[]'));
-let hiddenStocks = new Set(JSON.parse(localStorage.getItem('hiddenStocks') || '[]'));
+let pinnedStocks = new Set(JSON.parse(sessionStorage.getItem('pinnedStocks') || '[]'));
+let hiddenStocks = new Set(JSON.parse(sessionStorage.getItem('hiddenStocks') || '[]'));
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'limitup_unfilled_orders_dashboard';
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
     makeTableSortable();
     updateShowAllHiddenButton();
 
-    const savedState = JSON.parse(localStorage.getItem(`${PAGE_KEY}_state`));
+    const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
@@ -50,8 +50,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
 
-    // 注册实时更新处理
-    registerUpdateHandler('limitup_realtime', 'StockCode', (data) => {
+    // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
+    registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
     });
@@ -208,7 +208,7 @@ function togglePin(stockCode) {
     } else {
         pinnedStocks.add(stockCode);
     }
-    localStorage.setItem('pinnedStocks', JSON.stringify([...pinnedStocks]));
+    sessionStorage.setItem('pinnedStocks', JSON.stringify([...pinnedStocks]));
     applyFilters();
 }
 
@@ -218,14 +218,14 @@ function toggleHide(stockCode) {
     } else {
         hiddenStocks.add(stockCode);
     }
-    localStorage.setItem('hiddenStocks', JSON.stringify([...hiddenStocks]));
+    sessionStorage.setItem('hiddenStocks', JSON.stringify([...hiddenStocks]));
     applyFilters();
     updateShowAllHiddenButton();
 }
 
 function showAllHidden() {
     hiddenStocks.clear();
-    localStorage.setItem('hiddenStocks', JSON.stringify([...hiddenStocks]));
+    sessionStorage.setItem('hiddenStocks', JSON.stringify([...hiddenStocks]));
     applyFilters();
     updateShowAllHiddenButton();
 }
@@ -347,6 +347,6 @@ function saveState() {
         search: document.getElementById('search').value,
         streakFilter: document.getElementById('streakFilter').value
     };
-    localStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
+    sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
     console.log('State saved to localStorage');
 }

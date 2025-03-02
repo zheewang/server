@@ -3,9 +3,19 @@ from app_init import app, db, cache, StockPopularityRanking, StockTurnoverRankin
 from blueprints.common import get_nearest_trading_date, get_recent_trading_dates, merge_stock_data
 from datetime import datetime
 import logging
-from flask import session
 
 logger = logging.getLogger(__name__)
+
+# 假设你已经全局配置了 logging
+def disable_logging_temporarily():
+    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
+
+def enable_logging_again():
+    logging.disable(logging.NOTSET)  # 重新启用所有日志
+
+# 在你的特定页面或模块中调用 disable_logging_temporarily()
+# 在需要重新启用日志时调用 enable_logging_again()
+disable_logging_temporarily()
 
 stock_data_bp = Blueprint('stock_data', __name__)
 
@@ -18,10 +28,7 @@ def get_stock_data():
     if not date_str:
         return jsonify({'error': 'Date parameter is required'}), 400
 
-    cache_key = f"ma_strategy_data_{date_str}"
-    if cache_key in session:
-        logger.debug(f"Returning cached data for {date_str}")
-        return jsonify(session[cache_key])
+
 
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d')
@@ -100,7 +107,7 @@ def get_stock_data():
                 stock_data.append(stock_info)
 
             logger.debug(f"Returning {len(stock_data)} records")
-            session[cache_key] = stock_data
+ 
             return jsonify(stock_data)
 
     except ValueError:

@@ -7,7 +7,7 @@ from sqlalchemy import inspect
 import yaml
 import sqlalchemy
 import logging
-from flask_session import Session  # 添加 Session
+
 
 # 配置全局日志
 logging.basicConfig(
@@ -19,9 +19,6 @@ logging.basicConfig(
 
 app = Flask(__name__, static_url_path='/static')
 app.secret_key = '4ba25e1cfeb150ae1e979fee3928aeb8'  # 设置 Session 密钥
-app.config['SESSION_TYPE'] = 'filesystem'  # 使用文件系统存储 Session
-#app.config['PERMANENT_SESSION_LIFETIME'] = 7200  # 1 小时
-Session(app)  # 初始化 Session
 
 # 加载 config.yaml
 with open('config.yaml', 'r') as f:
@@ -39,7 +36,20 @@ app.config['PORT'] = config['server']['port']  # 添加 PORT
 
 db = SQLAlchemy(app)
 cache = Cache(app, config={'CACHE_TYPE': 'simple'})
-socketio = SocketIO(app, cors_allowed_origins="*") # 确保支持跨域
+socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
+
+logger = app.logger
+def init_socketio(socketio):
+    @socketio.on('connect', namespace='/stocks_realtime')
+    def handle_connect():
+        logger.debug("Client connected to /stocks_realtime namespace")
+
+    @socketio.on('disconnect', namespace='/stocks_realtime')
+    def handle_disconnect():
+        logger.debug("Client disconnected from /stocks_realtime namespace")
+
+init_socketio(socketio)  # 初始化SocketIO,绑定到特点的事件命名空间
+
 
 # 动态生成数据模型的基类
 def generate_model(table_name):
