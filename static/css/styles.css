@@ -338,6 +338,11 @@ td:hover .tooltip {
     color: #666;
 }
 
+.btn.watchlist-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
     .controls {
         flex-direction: column;

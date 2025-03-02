@@ -17,6 +17,7 @@ let stockData = [];
 let filteredData = [];
 let sortRules = [];
 let recentDates = [];
+let watchlist = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}').stockData || [];
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'ma_strategy_dashboard';
@@ -157,6 +158,11 @@ function updateTableHeaders() {
             th.dataset.text = date;
             thead.appendChild(th);
         });
+
+        const actionsTh = document.createElement('th');
+        actionsTh.textContent = 'Actions';
+        thead.appendChild(actionsTh);
+        
         bindSortEvents(filteredData, sortRules, renderTable, saveState);
     } else {
         const thead = document.getElementById('tableHeader').querySelector('tr');
@@ -233,9 +239,21 @@ function renderTable() {
         } else {
             rowHTML += `<td class="no-data" colspan="5">No recent data available</td>`;
         }
+        
+        // 添加 Actions 列
+        const isInWatchlist = watchlist.some(w => w.StockCode === stock.StockCode);
+        rowHTML += `
+            <td>
+                <button class="btn watchlist-btn" data-stock-code="${stock.StockCode}" ${isInWatchlist ? 'disabled' : ''}>
+                    ${isInWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+                </button>
+            </td>
+        `;
 
         row.innerHTML = rowHTML;
         tbody.appendChild(row);
+        const watchlistBtn = row.querySelector('.watchlist-btn');
+        watchlistBtn.addEventListener('click', () => toggleWatchlist(stock, watchlistBtn));
 
         if (hasRecentData) {
             const fiveDayCanvas = document.getElementById(fiveDayCanvasId);
@@ -280,6 +298,26 @@ function renderTable() {
 
     bindSortEvents(filteredData, sortRules, renderTable, saveState);
 }
+
+function toggleWatchlist(stock, button) {
+    const stockCode = stock.StockCode;
+    const isInWatchlist = watchlist.some(w => w.StockCode === stockCode);
+
+    if (isInWatchlist) {
+        watchlist = watchlist.filter(w => w.StockCode !== stockCode);
+        button.textContent = 'Add to watchlist';
+        button.disabled = false;
+    } else {
+        watchlist.push(stock);
+        button.textContent = 'Remove from watchlist';
+        button.disabled = true;
+    }
+
+    const customState = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}');
+    customState.stockData = watchlist;
+    sessionStorage.setItem('custom_stock_dashboard_state', JSON.stringify(customState));
+}
+
 
 function saveState() {
     const state = {

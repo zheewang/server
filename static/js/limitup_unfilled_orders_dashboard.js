@@ -17,6 +17,7 @@ let filteredData = [];
 let sortRules = [];
 let pinnedStocks = new Set(JSON.parse(sessionStorage.getItem('pinnedStocks') || '[]'));
 let hiddenStocks = new Set(JSON.parse(sessionStorage.getItem('hiddenStocks') || '[]'));
+let watchlist = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}').stockData || [];
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'limitup_unfilled_orders_dashboard';
@@ -40,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('search').value = savedState.search || '';
         document.getElementById('streakFilter').value = savedState.streakFilter || 'All';
         if (stockData.length > 0) {
-            console.log('Loaded from localStorage:', stockData.length, 'items');
+            console.log('Loaded from sessionStorage:', stockData.length, 'items');
             populateStreakFilter();
             updatePagination(pagination, filteredData.length);
             applyFilters();
@@ -241,6 +242,25 @@ function updateShowAllHiddenButton() {
     }
 }
 
+function toggleWatchlist(stock, button) {
+    const stockCode = stock.StockCode;
+    const isInWatchlist = watchlist.some(w => w.StockCode === stockCode);
+
+    if (isInWatchlist) {
+        watchlist = watchlist.filter(w => w.StockCode !== stockCode);
+        button.textContent = 'Add to watchlist';
+        button.disabled = false;
+    } else {
+        watchlist.push(stock);
+        button.textContent = 'Remove from watchlist';
+        button.disabled = true;
+    }
+
+    const customState = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}');
+    customState.stockData = watchlist;
+    sessionStorage.setItem('custom_stock_dashboard_state', JSON.stringify(customState));
+}
+
 function renderTable() {
     const tbody = document.querySelector('#stockTable tbody');
     if (!tbody) {
@@ -290,6 +310,10 @@ function renderTable() {
             <td>
                 <button class="btn pin-btn" data-stock-code="${stock.StockCode}">${pinnedStocks.has(stock.StockCode) ? 'Unpin' : 'Pin'}</button>
                 <button class="btn hide-btn" data-stock-code="${stock.StockCode}">${hiddenStocks.has(stock.StockCode) ? 'Show' : 'Hide'}</button>
+                
+                <button class="btn watchlist-btn" data-stock-code="${stock.StockCode}" ${watchlist.some(w => w.StockCode === stock.StockCode) ? 'disabled' : ''}>
+                    ${watchlist.some(w => w.StockCode === stock.StockCode) ? 'Remove from watchlist' : 'Add to watchlist'}
+                </button>
             </td>
         `;
 
@@ -298,8 +322,11 @@ function renderTable() {
 
         const pinBtn = row.querySelector('.pin-btn');
         const hideBtn = row.querySelector('.hide-btn');
+        const watchlistBtn = row.querySelector('.watchlist-btn');
+
         pinBtn.addEventListener('click', () => togglePin(stock.StockCode));
         hideBtn.addEventListener('click', () => toggleHide(stock.StockCode));
+        watchlistBtn.addEventListener('click', () => toggleWatchlist(stock, watchlistBtn));
 
         // console.log(`Rendered row ${rowIndex}:`, stock);
 
@@ -348,5 +375,5 @@ function saveState() {
         streakFilter: document.getElementById('streakFilter').value
     };
     sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
-    console.log('State saved to localStorage');
+    console.log('State saved to sessionStorage');
 }

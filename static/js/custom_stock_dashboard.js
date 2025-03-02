@@ -53,6 +53,19 @@ document.addEventListener('DOMContentLoaded', function() {
         saveState();
     });
 
+
+    // 监听 sessionStorage 变化，确保 watchlist 更新
+    window.addEventListener('storage', function(event) {
+        if (event.key === `${PAGE_KEY}_state`) {
+            const newState = JSON.parse(event.newValue || '{}');
+            stockData = newState.stockData || [];
+            deletedStocks = new Set(newState.deletedStocks || []);
+            updatePagination(pagination, stockData.length);
+            renderTable();
+            saveState();
+        }
+    });
+
     document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
 
     const fetchDataBtn = document.getElementById('fetchDataBtn');
@@ -89,6 +102,9 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('saveStockCodesBtn not found in DOM');
     }
+
+    // 每隔10分钟自动保存到后端
+    setInterval(autoSaveStockCodes, 10 * 60 * 1000);  // 10分钟 = 600秒 = 600,000毫秒
 });
 
 function fetchData(newStockCode = null) {
@@ -185,6 +201,27 @@ function saveStockCodes() {
         console.error('Error saving stock codes:', error);
         alert('Failed to save stock codes');
         saveState();
+    });
+}
+
+// 新增：自动保存函数
+function autoSaveStockCodes() {
+    const stockCodes = stockData.map(stock => stock.StockCode);
+    fetch(`${BASE_URL}/api/save_stock_codes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_codes: stockCodes })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Auto-saved stock codes:', data.message || 'Success');
+        saveState();
+    })
+    .catch(error => {
+        console.error('Auto-save failed:', error);
     });
 }
 
@@ -294,5 +331,5 @@ function saveState() {
         newStockCode: document.getElementById('newStockCode').value
     };
     sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
-    console.log('State saved to localStorage');
+    console.log('State saved to sessionStorage');
 }
