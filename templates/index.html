@@ -43,9 +43,9 @@
         // 清除所有缓存的逻辑
         document.getElementById('clearAllCacheBtn').addEventListener('click', function() {
             console.log('Clear All Cache button clicked');
-            localStorage.clear();
+            sessionStorage.clear();
             // 也可以只清除特定的缓存
-            // localStorage.removeItem('custom_stock_dashboard_state');
+            // SessionStorage.removeItem('custom_stock_dashboard_state');
             console.log('All local storage cleared');
             alert('All cached data has been cleared!');
         });

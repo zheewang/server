@@ -109,6 +109,10 @@ class RealtimeUpdater:
             in_trading_time = is_trading_time()
             
             updated_data = {}
+
+            # 去重 stock_codes
+            stock_codes = list(set(stock_codes))
+
             if not is_trading_day or not in_trading_time:
                 # 非交易日或非交易时间，全部从 tushare 获取
                 logger.debug(f"[{caller}] Non-trading day/time, fetching all from tushare")
@@ -131,7 +135,8 @@ class RealtimeUpdater:
                 if custom_codes:
                     logger.debug(f"[{caller}] Fetching custom stocks from mairui: {len(custom_codes)}")
                     rate_limit = DATA_SOURCES['mairui']['rate_limit']
-                    for code in stock_codes:
+
+                    for code in stock_codes:                        
                         max_retries = 3
                         retry_count = 0
                         success = False
@@ -241,7 +246,7 @@ class RealtimeUpdater:
                 if is_trading_day and in_trading_time:
                     sleep_time = 10  # 交易时间 sleep 10 秒
                 else:
-                    sleep_time = 1800  # 非交易时间 sleep 1800 秒（30 分钟）
+                    sleep_time = 600  # 非交易时间 sleep 1800 秒（30 分钟）
 
                 gevent.sleep(sleep_time)
             except Exception as e:

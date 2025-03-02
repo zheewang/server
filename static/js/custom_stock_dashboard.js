@@ -16,6 +16,8 @@ let stockData = [];
 let filteredData = [];  // 新增
 let sortRules = [];
 let deletedStocks = new Set();
+let lastSyncedStockData = [];  // 记录上次同步的 stockData，用于比较
+
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'custom_stock_dashboard';
@@ -29,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
         filteredData = stockData;  // 初始化 filteredData
         sortRules = savedState.sortRules || [];
         deletedStocks = new Set(savedState.deletedStocks || []);
+        lastSyncedStockData = [...stockData];  // 初始化上次同步数据
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('newStockCode').value = savedState.newStockCode || '';
         if (stockData.length > 0) {
@@ -103,8 +106,19 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('saveStockCodesBtn not found in DOM');
     }
 
+    // 新增：手动同步按钮
+    const syncBtn = document.getElementById('syncToBackendBtn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', syncToBackend);
+    } else {
+        console.error('syncToBackendBtn not found in DOM');
+    }
+
     // 每隔10分钟自动保存到后端
     setInterval(autoSaveStockCodes, 10 * 60 * 1000);  // 10分钟 = 600秒 = 600,000毫秒
+
+    // 每分钟检测 watchlist 变化并同步
+    setInterval(checkAndSyncWatchlist, 30 * 1000);  // 每30s检查一次
 });
 
 function fetchData(newStockCode = null) {
@@ -195,6 +209,7 @@ function saveStockCodes() {
     })
     .then(data => {
         alert(data.message || 'Stock codes saved successfully');
+        lastSyncedStockData = [...stockData];  // 更新上次同步数据
         saveState();
     })
     .catch(error => {
@@ -218,11 +233,54 @@ function autoSaveStockCodes() {
     })
     .then(data => {
         console.log('Auto-saved stock codes:', data.message || 'Success');
+        lastSyncedStockData = [...stockData];  // 更新上次同步数据
         saveState();
     })
     .catch(error => {
         console.error('Auto-save failed:', error);
     });
+}
+
+// 新增：检查 watchlist 变化并同步
+function checkAndSyncWatchlist() {
+    const currentState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`) || '{}');
+    const currentStockData = currentState.stockData || [];
+
+    // 比较当前 stockData 与上次同步的 stockData
+    const hasChanged = JSON.stringify(currentStockData.map(s => s.StockCode)) !== JSON.stringify(lastSyncedStockData.map(s => s.StockCode));
+    if (hasChanged) {
+        console.log('Watchlist changed, syncing to backend...');
+        stockData = [...currentStockData];  // 更新本地 stockData
+        syncToBackend();
+    }
+}
+
+// 新增：手动同步到后端
+function syncToBackend() {
+    const stockCodes = stockData.map(stock => stock.StockCode);
+    fetch(`${BASE_URL}/api/update_stocks_pool`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes: stockCodes, caller: 'custom_stock_dashboard' })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Synced to backend:', data.message || 'Success');
+        lastSyncedStockData = [...stockData];  // 更新上次同步数据
+        // 同时保存到文件（与 saveStockCodes 一致）
+        saveStockCodes();
+        return fetch(`${BASE_URL}/api/save_stock_codes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stock_codes: stockCodes })
+        });
+    })
+    .then(response => response.json())
+    .then(data => console.log('Saved to backend:', data.message || 'Success'))
+    .catch(error => console.error('Sync failed:', error));
 }
 
 function updateTableHeaders() {
@@ -286,7 +344,7 @@ function renderTable() {
         const deleteBtn = row.querySelector('.delete-btn');
         deleteBtn.addEventListener('click', () => deleteStock(stock.StockCode));
 
-        console.log(`Rendered row ${rowIndex}:`, stock);
+        // console.log(`Rendered row ${rowIndex}:`, stock);
 
         if (hasRecentData) {
             const fiveDayCanvas = document.getElementById(fiveDayCanvasId);

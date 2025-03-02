@@ -33,15 +33,16 @@ def is_tradingday(target_date):
     :param target_date: 日期 (datetime 或者 'YYYY-MM-DD' 格式的字符串)
     :return: True 如果是交易日，否则 False
     """
-    if isinstance(target_date, str):
-        try:
-            target_date = datetime.strptime(target_date, "%Y-%m-%d")
-        except ValueError:
-            raise ValueError("Invalid date format. Use 'YYYY-MM-DD'.")
+    with app.app_context():  # 添加应用上下文
+        if isinstance(target_date, str):
+            try:
+                target_date = datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError("Invalid date format. Use 'YYYY-MM-DD'.")
 
-    nearest_trading_date = get_nearest_trading_date(target_date, TradingDay)
-    
-    return nearest_trading_date == target_date if nearest_trading_date else False
+        nearest_trading_date = get_nearest_trading_date(target_date, TradingDay)
+        
+        return nearest_trading_date == target_date if nearest_trading_date else False
 
 
 def merge_stock_data(base_data, stock_codes, nearest_trading_date, recent_trading_dates, models):

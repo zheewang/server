@@ -193,3 +193,11 @@ def save_stock_codes():
         logger.error(f"Error saving stock codes: {str(e)}")
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
+@app.route('/api/update_stocks_pool', methods=['POST'])
+def update_stocks_pool_api():
+    from blueprints.stock_pool_manager import update_stocks_pool
+    data = request.get_json()
+    codes = data.get('codes', [])
+    caller = data.get('caller', 'unknown')
+    update_stocks_pool(codes, caller)
+    return jsonify({'message': 'Stocks pool updated'})
