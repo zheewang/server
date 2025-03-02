@@ -233,10 +233,24 @@ class RealtimeUpdater:
                             logger.debug(f"[global] realtime Emitted ")
                         else:
                             logger.warning("[global] No data returned from get_realtime_data")
-                gevent.sleep(10)
+
+                # 根据交易时间动态调整 sleep 时间
+                # 判断是否为交易日和交易时间
+                is_trading_day = is_tradingday(datetime.now().date())
+                in_trading_time = is_trading_time()
+                if is_trading_day and in_trading_time:
+                    sleep_time = 10  # 交易时间 sleep 10 秒
+                else:
+                    sleep_time = 1800  # 非交易时间 sleep 1800 秒（30 分钟）
+
+                gevent.sleep(sleep_time)
             except Exception as e:
                 logger.error(f"[global] Error in data update task: {str(e)}", exc_info=True)
-                gevent.sleep(5)  # 继续循环
+                # 异常时仍根据交易时间调整 sleep
+                if is_trading_time():
+                    gevent.sleep(10)
+                else:
+                    gevent.sleep(1800)
         logger.info("[global] Data update task stopped")
 
     def start(self):
