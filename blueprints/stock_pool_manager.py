@@ -129,7 +129,7 @@ class RealtimeUpdater:
 
                 # custom_stocks 从 mairui 获取
                 if custom_codes:
-                    logger.debug(f"[{caller}] Fetching custom stocks from mairui: {custom_codes}")
+                    logger.debug(f"[{caller}] Fetching custom stocks from mairui: {len(custom_codes)}")
                     rate_limit = DATA_SOURCES['mairui']['rate_limit']
                     for code in stock_codes:
                         max_retries = 3
@@ -158,9 +158,10 @@ class RealtimeUpdater:
                             if not success :
                                 logger.error(f"[{caller}] Failed to fetch data for {code} after {max_retries} retries")
                         gevent.sleep(1 / rate_limit)
-                    # 其他股票从 tushare 获取
+
+                # 其他股票从 tushare 获取
                 if other_codes:
-                    logger.debug(f"[{caller}] Fetching other stocks from tushare: {other_codes}")
+                    logger.debug(f"[{caller}] Fetching other stocks from tushare: {len(other_codes)}")
                     ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in other_codes]
                     batch_size = DATA_SOURCES['tushare'].get('batch_size', 10)
                     for i in range(0, len(ts_codes), batch_size):
