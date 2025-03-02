@@ -44,10 +44,10 @@ def limitup_unfilled_orders_dashboard():
 
 
 
-
 from blueprints.stock_pool_manager import global_updater
 if __name__ == '__main__':
     with app.app_context():
         global_updater.sync_latest_stocks()  # 初始同步
         global_updater.start()  # 启动线程
     socketio.run(app, host=app.config['HOST'], port=app.config['PORT'], debug=False)
+    print('Server started successfully')

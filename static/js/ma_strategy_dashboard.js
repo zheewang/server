@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
         stockData = savedState.stockData || [];
-        filteredData = savedState.filteredData || [];
+        filteredData = savedState.filteredData || stockData;  // 初始化 filteredData
         sortRules = savedState.sortRules || [];
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('date').value = savedState.date || '';
@@ -60,7 +60,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 绑定 Fetch Data 按钮事件
     document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
-
+    document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
+ 
     document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
     document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
 
@@ -99,6 +100,7 @@ function fetchData() {
             }
 
             stockData = data;
+            filteredData = [...stockData];  // 初始化 filteredData
             populateTypeFilter();
             applyFilters();
         })
@@ -130,12 +132,11 @@ function populateTypeFilter() {
 
 function applyFilters() {
     const typeFilter = document.getElementById('typeFilter').value;
-    console.log('Applying filter with type:', typeFilter);
-    filteredData = stockData.filter(stock => 
-        typeFilter === 'All' || stock.type === typeFilter
+    const searchValue = document.getElementById('search').value.toLowerCase();  // 新增
+    filteredData = stockData.filter(stock =>
+        (typeFilter === 'All' || stock.type === typeFilter) && 
+        (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
     );
-    console.log('Filtered data length:', filteredData.length);
-
     updateTableHeaders();
     updatePagination(pagination, filteredData.length);
     renderTable();
@@ -170,8 +171,8 @@ function renderTable() {
     tbody.innerHTML = '';
 
     const start = (pagination.currentPage - 1) * pagination.perPage;
-    const end = start + pagination.perPage;
-    const pageData = filteredData.slice(start, end);
+    const end = Math.min(start + pagination.perPage, filteredData.length);  // 使用 filteredData
+    const pageData = filteredData.slice(start, end);  // 使用 filteredData
 
     pageData.forEach((stock, rowIndex) => {
         const row = document.createElement('tr');

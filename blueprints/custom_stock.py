@@ -3,7 +3,6 @@ from flask import Blueprint, jsonify, request
 import gevent.lock
 from app_init import app, db, cache, socketio, StockPopularityRanking, StockTurnoverRanking, DailyLimitUpStocks, DailyStockData, TradingDay
 from blueprints.common import get_nearest_trading_date, get_recent_trading_dates, merge_stock_data
-from blueprints.stock_pool_manager import update_stocks_pool, get_realtime_data
 from datetime import datetime, timedelta
 import pytz
 import os
@@ -72,6 +71,7 @@ def write_stock_codes(stock_codes_to_write, file_path='stocks.txt'):
 @custom_stock_bp.route('/custom_stock_data', methods=['GET'])
 @cache.cached(timeout=300, query_string=True)
 def get_custom_stock_data():
+    from blueprints.stock_pool_manager import update_stocks_pool, get_realtime_data #延迟导入
     global stock_codes
     new_stock_code = request.args.get('new_stock_code')
     target_date = get_beijing_time().date()

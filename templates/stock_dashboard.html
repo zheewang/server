@@ -24,12 +24,17 @@
                 <label for="sector_code">Sector Code:</label>
                 <input type="text" id="sector_code" name="sector_code" >
             </div>
+
             <div>
                 <label for="perPage">Items per page:</label>
                 <input type="number" id="perPage" name="perPage" value="30" min="1">
             </div>
             <!-- 移除 onclick，改为 JS 绑定 -->
             <button id="fetchDataBtn" class="btn">Fetch Data</button>
+            <div>
+                <label for="search">Search:</label>
+                <input type="text" id="search" name="search" placeholder="Stock Code or Name" >
+            </div>
         </div>
 
         <div class="table-container">

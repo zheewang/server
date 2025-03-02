@@ -13,6 +13,7 @@ import { registerUpdateHandler, updateData } from './realtime.js';
 
 let pagination = initPagination();
 let stockData = [];
+let filteredData = [];  // 新增
 let sortRules = [];
 let deletedStocks = new Set();
 
@@ -25,6 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
         stockData = savedState.stockData || [];
+        filteredData = stockData;  // 初始化 filteredData
         sortRules = savedState.sortRules || [];
         deletedStocks = new Set(savedState.deletedStocks || []);
         document.getElementById('perPage').value = pagination.perPage;
@@ -40,8 +42,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     makeTableSortable();
-    bindPerPageInput(pagination, stockData, renderTable, saveState);
-    bindSortEvents(stockData, sortRules, renderTable, saveState);
+    bindPerPageInput(pagination, filteredData, renderTable, saveState);
+    bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
     // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
@@ -50,6 +52,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderTable();
         saveState();
     });
+
+    document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
 
     const fetchDataBtn = document.getElementById('fetchDataBtn');
     if (fetchDataBtn) {
@@ -129,6 +133,18 @@ function fetchData(newStockCode = null) {
         });
 }
 
+
+function applyFilters() {  // 新增
+    const searchValue = document.getElementById('search').value.toLowerCase();
+    filteredData = stockData.filter(stock =>
+        !deletedStocks.has(stock.StockCode) &&
+        (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
+    );
+    updatePagination(pagination, filteredData.length);
+    renderTable();
+    saveState();
+}
+
 function addStock() {
     const newStockCode = document.getElementById('newStockCode').value.trim();
     if (newStockCode && !stockData.some(stock => stock.StockCode === newStockCode)) {
@@ -188,8 +204,8 @@ function renderTable() {
     tbody.innerHTML = '';
 
     const start = (pagination.currentPage - 1) * pagination.perPage;
-    const end = Math.min(start + pagination.perPage, stockData.length);
-    const pageData = stockData.slice(start, end);
+    const end = Math.min(start + pagination.perPage, filteredData.length);  // 使用 filteredData
+    const pageData = filteredData.slice(start, end);  // 使用 filteredData
 
     console.log('Rendering table with pageData:', pageData);
 
@@ -263,7 +279,7 @@ function renderTable() {
         rowCount.style.cssText = 'text-align: right; padding: 5px; font-size: 14px; color: #666;';
         tableContainer.insertBefore(rowCount, tableContainer.firstChild);
     }
-    rowCount.textContent = `Rows: ${stockData.length}`;  // 使用 stockData
+    rowCount.textContent = `Rows: ${filteredData.length}`;  // 使用 stockData
 
     console.log('Table rendered with pageData length:', pageData.length);
 }

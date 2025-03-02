@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 
 app = Flask(__name__, static_url_path='/static')
-app.secret_key = '4ba25e1cfeb150ae1e979fee3928aeb8'  # 设置 Session 密钥
+
 
 # 加载 config.yaml
 with open('config.yaml', 'r') as f:
@@ -38,7 +38,9 @@ db = SQLAlchemy(app)
 cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
 
+
 logger = app.logger
+# 初始化socketio
 def init_socketio(socketio):
     @socketio.on('connect', namespace='/stocks_realtime')
     def handle_connect():

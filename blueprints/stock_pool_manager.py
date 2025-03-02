@@ -10,6 +10,9 @@ import requests
 import logging
 import yaml
 from datetime import datetime, time as dt_time
+from blueprints.common import is_tradingday
+from app_init import TradingDay  # 直接从 app_init.py 导入
+from blueprints.custom_stock import read_stock_codes  # 引入 custom_stocks
 
 logger = app.logger
 # 假设你已经全局配置了 logging
@@ -67,7 +70,7 @@ def is_trading_time():
     if weekday > 4:
         return False
     current_time = now.time()
-    morning_start = dt_time(9, 10)
+    morning_start = dt_time(9, 15)
     morning_end = dt_time(11, 30)
     afternoon_start = dt_time(13, 0)
     afternoon_end = dt_time(15, 0)
@@ -79,6 +82,8 @@ class RealtimeUpdater:
         self.realtime_lock = gevent.lock.Semaphore()
         self.running = False
         self.last_cleanup_time = time.time()
+        self.trading_day = TradingDay()  # 初始化 TradingDay
+        self.custom_stocks = set(read_stock_codes())  # 加载 custom_stocks
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -99,56 +104,70 @@ class RealtimeUpdater:
 
     def get_realtime_data(self, stock_codes, caller='global', source=None):
         try:
-            if source is None:
-                source = self.select_data_source()
-            if source not in DATA_SOURCES:
-                raise ValueError(f"Unsupported data source: {source}")
+            # 判断是否为交易日和交易时间
+            is_trading_day = is_tradingday(datetime.now().date())
+            in_trading_time = is_trading_time()
             
-            data_source = DATA_SOURCES[source]
             updated_data = {}
-            
-            logger.debug(f"[{caller}] Fetching realtime data from {source} for {len(stock_codes)} stocks: {stock_codes}")
-            if source == 'tushare':
+            if not is_trading_day or not in_trading_time:
+                # 非交易日或非交易时间，全部从 tushare 获取
+                logger.debug(f"[{caller}] Non-trading day/time, fetching all from tushare")
                 ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in stock_codes]
-                batch_size = data_source.get('batch_size', 10)
+                batch_size = DATA_SOURCES['tushare'].get('batch_size', 10)
                 for i in range(0, len(ts_codes), batch_size):
                     batch = ts_codes[i:i + batch_size]
                     logger.debug(f"[{caller}] Fetching batch {i // batch_size + 1}: {batch}")
                     df = ts.realtime_quote(ts_code=','.join(batch))
-                    # logger.debug(f"[{caller}] Tushare raw data: {df.to_dict()}")
                     batch_data = DataAdapter.tushare_adapter(df)
                     logger.debug(f"[{caller}] Tushare batch data: {batch_data}")
                     updated_data.update(batch_data)
 
-            elif source == 'mairui':
-                rate_limit = data_source['rate_limit']
-                for code in stock_codes:
-                    max_retries = 3
-                    retry_count = 0
-                    success = False
-                    
-                    while retry_count < max_retries and not success:
-                        urls = [data_source['main_url'], data_source['backup_url']]
-                        for url_template in urls:
-                            url = url_template.format(code=code, licence=data_source['licence'])
-                            try:
-                                response = requests.get(url, timeout=5)
-                                response.raise_for_status()
-                                data = response.json()
-                                logger.debug(f"[{caller}] Fetched data for {code}: {data}")
-                                batch_data = DataAdapter.mairui_adapter(data, code)
-                                logger.debug(f"[{caller}] Mairui batch data for {code}: {batch_data}")
-                                updated_data.update(batch_data)
-                                success = True
-                                break
-                            except requests.RequestException as e:
-                                logger.warning(f"[{caller}] Attempt {retry_count + 1} failed for {code} with {url}: {str(e)}")
-                                retry_count += 1
-                                if retry_count < max_retries:
-                                    gevent.sleep(1)
-                        if not success and retry_count >= max_retries:
-                            logger.error(f"[{caller}] Failed to fetch data for {code} after {max_retries} retries")
-                    gevent.sleep(1 / rate_limit)
+            else:
+                # 交易日交易时间，分情况处理
+                custom_codes = [code for code in stock_codes if code in self.custom_stocks]
+                other_codes = [code for code in stock_codes if code not in self.custom_stocks]
+
+                # custom_stocks 从 mairui 获取
+                if custom_codes:
+                    logger.debug(f"[{caller}] Fetching custom stocks from mairui: {custom_codes}")
+                    rate_limit = DATA_SOURCES['mairui']['rate_limit']
+                    for code in stock_codes:
+                        max_retries = 3
+                        retry_count = 0
+                        success = False
+                        
+                        while retry_count < max_retries and not success:
+                            urls = [DATA_SOURCES['mairui']['main_url'], DATA_SOURCES['mairui']['backup_url']]
+                            for url_template in urls:
+                                url = url_template.format(code=code, licence=DATA_SOURCES['mairui']['licence'])
+                                try:
+                                    response = requests.get(url, timeout=5)
+                                    response.raise_for_status()
+                                    data = response.json()
+                                    logger.debug(f"[{caller}] Fetched data for {code}: {data}")
+                                    batch_data = DataAdapter.mairui_adapter(data, code)
+                                    logger.debug(f"[{caller}] Mairui batch data for {code}: {batch_data}")
+                                    updated_data.update(batch_data)
+                                    success = True
+                                    break
+                                except requests.RequestException as e:
+                                    logger.warning(f"[{caller}] Attempt {retry_count + 1} failed for {code} with {url}: {str(e)}")
+                                    retry_count += 1
+                                    if retry_count < max_retries:
+                                        gevent.sleep(1)
+                            if not success :
+                                logger.error(f"[{caller}] Failed to fetch data for {code} after {max_retries} retries")
+                        gevent.sleep(1 / rate_limit)
+                    # 其他股票从 tushare 获取
+                if other_codes:
+                    logger.debug(f"[{caller}] Fetching other stocks from tushare: {other_codes}")
+                    ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in other_codes]
+                    batch_size = DATA_SOURCES['tushare'].get('batch_size', 10)
+                    for i in range(0, len(ts_codes), batch_size):
+                        batch = ts_codes[i:i + batch_size]
+                        df = ts.realtime_quote(ts_code=','.join(batch))
+                        batch_data = DataAdapter.tushare_adapter(df)
+                        updated_data.update(batch_data)
 
             logger.debug(f"[{caller}] Final updated_data from {source}")
             return updated_data

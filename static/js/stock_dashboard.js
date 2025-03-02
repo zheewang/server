@@ -12,6 +12,7 @@ import {
 
 let pagination = initPagination();
 let stockData = [];
+let filteredData = [];  // 新增
 let sortRules = [];
 let recentDates = [];
 let sectors = [];
@@ -44,11 +45,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 allowClear: true
             });
 
-            const savedState = JSON.parse(localStorage.getItem(`${PAGE_KEY}_state`));
+            const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
             if (savedState) {
                 pagination.currentPage = savedState.currentPage || 1;
                 pagination.perPage = savedState.perPage || 30;
                 stockData = savedState.stockData || [];
+                filteredData = stockData;  // 初始化 filteredData
                 sortRules = savedState.sortRules || [];
                 document.getElementById('perPage').value = pagination.perPage;
                 document.getElementById('date').value = savedState.date || '';
@@ -56,7 +58,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('sector_name').value = savedState.sectorName || '';
                 document.getElementById('sector_code').value = savedState.sectorCode || '';
                 if (stockData.length > 0) {
-                    updatePagination(pagination, stockData.length);
+                    updatePagination(pagination, filteredData.length);
                     updateTableHeaders();
                     renderTable();
                 }
@@ -67,14 +69,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
     makeTableSortable();
-    bindPerPageInput(pagination, stockData, renderTable, saveState);
-    bindSortEvents(stockData, sortRules, renderTable, saveState);
+    bindPerPageInput(pagination, filteredData, renderTable, saveState);
+    bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
     // 绑定 Fetch Data 按钮事件
     document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
 
     document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
     document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
+    document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
 
     document.getElementById('th_sector_index').addEventListener('change', function() {
         const selectedTHS = this.value;
@@ -142,7 +145,8 @@ function fetchData() {
 
             stockData = data;
             updateTableHeaders();
-            updatePagination(pagination, stockData.length);
+            filteredData = [...stockData];
+            updatePagination(pagination, filteredData.length);
             renderTable();
             saveState();
         })
@@ -177,13 +181,24 @@ function updateTableHeaders() {
     }
 }
 
+function applyFilters() {  // 新增
+    const searchValue = document.getElementById('search').value.toLowerCase();
+    filteredData = stockData.filter(stock =>
+        stock.StockCode.toLowerCase().includes(searchValue) ||
+        stock.StockName.toLowerCase().includes(searchValue)
+    );
+    updatePagination(pagination, filteredData.length);
+    renderTable();
+    saveState();
+}
+
 function renderTable() {
     const tbody = document.querySelector('#stockTable tbody');
     tbody.innerHTML = '';
 
     const start = (pagination.currentPage - 1) * pagination.perPage;
-    const end = start + pagination.perPage;
-    const pageData = stockData.slice(start, end);
+    const end = Math.min(start + pagination.perPage, filteredData.length);  // 使用 filteredData
+    const pageData = filteredData.slice(start, end);
 
     pageData.forEach((stock, rowIndex) => {
         const row = document.createElement('tr');
@@ -280,7 +295,7 @@ function renderTable() {
         rowCount.style.cssText = 'text-align: right; padding: 5px; font-size: 14px; color: #666;';
         tableContainer.insertBefore(rowCount, tableContainer.firstChild);
     }
-    rowCount.textContent = `Rows: ${stockData.length}`;  // 使用 stockData
+    rowCount.textContent = `Rows: ${filteredData.length}`;  // 使用 filteredData
 
     bindSortEvents(stockData, sortRules, renderTable, saveState);
 }
@@ -290,11 +305,12 @@ function saveState() {
         currentPage: pagination.currentPage,
         perPage: pagination.perPage,
         stockData,
+        filteredData,  // 保存 filteredData
         sortRules,
         date: document.getElementById('date').value,
         thSectorIndex: document.getElementById('th_sector_index').value,
         sectorName: document.getElementById('sector_name').value,
         sectorCode: document.getElementById('sector_code').value
     };
-    localStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
+    sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
 }
