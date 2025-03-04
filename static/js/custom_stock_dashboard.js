@@ -51,7 +51,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
-        updatePagination(pagination, stockData.length);
+        applyFilters(); // 重新过滤数据
+        updatePagination(pagination, filteredData.length); // 更新分页信息
+        sortData(filteredData, sortRules, sortRules.length > 0 ? sortRules[0].field : 'StockCode', { shiftKey: false });
         renderTable();
         saveState();
     });
@@ -170,6 +172,10 @@ function applyFilters() {  // 新增
         !deletedStocks.has(stock.StockCode) &&
         (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
     );
+    // **每次筛选后，自动按照当前的排序规则重新排序**
+    if (sortRules.length > 0) {
+        sortData(filteredData, sortRules, sortRules[0].field, { shiftKey: false });
+    }
     updatePagination(pagination, filteredData.length);
     renderTable();
     saveState();

@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', function() {
         //console.log('Updating stockData with:', data);
         updateData(data, stockData, 'StockCode');
         applyFilters();
+        updatePagination(pagination, filteredData.length); // 更新分页信息
+        sortData(filteredData, sortRules, sortRules.length > 0 ? sortRules[0].field : 'StockCode', { shiftKey: false });
         renderTable();
         saveState();
     });
@@ -138,6 +140,11 @@ function applyFilters() {
         (typeFilter === 'All' || stock.type === typeFilter) && 
         (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
     );
+
+    // **每次筛选后，自动按照当前的排序规则重新排序**
+    if (sortRules.length > 0) {
+        sortData(filteredData, sortRules, sortRules[0].field, { shiftKey: false });
+    }
     updateTableHeaders();
     updatePagination(pagination, filteredData.length);
     renderTable();

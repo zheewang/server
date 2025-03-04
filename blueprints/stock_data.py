@@ -6,17 +6,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 假设你已经全局配置了 logging
-def disable_logging_temporarily():
-    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
-
-def enable_logging_again():
-    logging.disable(logging.NOTSET)  # 重新启用所有日志
-
-# 在你的特定页面或模块中调用 disable_logging_temporarily()
-# 在需要重新启用日志时调用 enable_logging_again()
-disable_logging_temporarily()
-
 stock_data_bp = Blueprint('stock_data', __name__)
 
 @stock_data_bp.route('/stock_data', methods=['GET'])

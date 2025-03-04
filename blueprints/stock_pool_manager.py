@@ -1,8 +1,7 @@
 from flask_socketio import emit
 import gevent.lock
 import gevent.queue
-from app_init import  app, db
-from app_init import socketio
+from app_init import app, db, socketio
 import tushare as ts
 import gevent
 import time
@@ -11,27 +10,45 @@ import logging
 import yaml
 from datetime import datetime, time as dt_time
 from blueprints.common import is_tradingday
-from app_init import TradingDay  # 直接从 app_init.py 导入
-from blueprints.custom_stock import read_stock_codes  # 引入 custom_stocks
+from blueprints.custom_stock import read_stock_codes
+import asyncio
+from playwright.async_api import async_playwright
+import nest_asyncio
+
+# 修复 asyncio 在 gevent 中的兼容性问题
+nest_asyncio.apply()
 
 logger = app.logger
-# 假设你已经全局配置了 logging
-def disable_logging_temporarily():
-    logging.disable(logging.CRITICAL)  # 禁用所有级别低于 CRITICAL 的日志
-
-def enable_logging_again():
-    logging.disable(logging.NOTSET)  # 重新启用所有日志
-
-# 在你的特定页面或模块中调用 disable_logging_temporarily()
-# 在需要重新启用日志时调用 enable_logging_again()
-enable_logging_again()
-
-# 加载配置文件
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 DATA_SOURCES = config['data_sources']
 ts.set_token(DATA_SOURCES['tushare']['token'])
 pro = ts.pro_api()
+
+stocks_pool = {}
+stocks_pool_lock = gevent.lock.Semaphore()
+stock_update_queue = gevent.queue.Queue()
+
+def is_trading_time():
+    now = datetime.now()
+    weekday = now.weekday()
+    if weekday > 4:  # 周末
+        return False
+    current_time = now.time()
+    morning_start = dt_time(9, 30)
+    morning_end = dt_time(11, 30)
+    afternoon_start = dt_time(13, 0)
+    afternoon_end = dt_time(15, 0)
+    return (morning_start <= current_time <= morning_end) or (afternoon_start <= current_time <= afternoon_end)
+
+def get_stock_prefix(stock_code):
+    first_char = stock_code[0]
+    first_digit = int(first_char)
+    if first_digit in {0, 3}:
+        return 'sz'
+    elif first_digit == 6:
+        return 'sh'
+    return ''
 
 class DataAdapter:
     @staticmethod
@@ -60,21 +77,23 @@ class DataAdapter:
             }
         return updated_data
 
-stocks_pool = {}
-stocks_pool_lock = gevent.lock.Semaphore()
-stock_update_queue = gevent.queue.Queue()
-
-def is_trading_time():
-    now = datetime.now()
-    weekday = now.weekday()
-    if weekday > 4:
-        return False
-    current_time = now.time()
-    morning_start = dt_time(9, 15)
-    morning_end = dt_time(11, 30)
-    afternoon_start = dt_time(13, 0)
-    afternoon_end = dt_time(15, 0)
-    return (morning_start <= current_time <= morning_end) or (afternoon_start <= current_time <= afternoon_end)
+    @staticmethod
+    def selenium_adapter(data_dict):
+        """将 Playwright 爬取的数据转换为标准格式"""
+        updated_data = {}
+        code = data_dict.get("Stock Code", "").replace('sz', '').replace('sh', '')
+        price_str = data_dict.get("最新", "0")  # 东财字段，可能需调整
+        prev_close_str = data_dict.get("昨收", "0")
+        try:
+            price = float(price_str.replace(',', '')) if price_str else 0
+            prev_close = float(prev_close_str.replace(',', '')) if prev_close_str else 0
+            updated_data[code] = {
+                'RealtimePrice': price,
+                'RealtimeChange': round(((price - prev_close) / prev_close * 100) if prev_close != 0 else 0, 2)
+            }
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse Playwright data for {code}: {e}")
+        return updated_data
 
 class RealtimeUpdater:
     def __init__(self):
@@ -82,8 +101,44 @@ class RealtimeUpdater:
         self.realtime_lock = gevent.lock.Semaphore()
         self.running = False
         self.last_cleanup_time = time.time()
-        self.trading_day = TradingDay()  # 初始化 TradingDay
-        self.custom_stocks = set(read_stock_codes())  # 加载 custom_stocks
+        #self.trading_day = TradingDay()
+        self.custom_stocks = set(read_stock_codes())
+        self.source_tasks = {}
+        self.playwright = None
+        self.browser = None
+        self.last_restart_time = time.time()
+        self.restart_interval = 3600  # 每小时重启一次
+
+        # 初始化 Playwright
+        asyncio.run(self.init_playwright())
+
+    async def init_playwright(self):
+        """初始化 Playwright 和浏览器"""
+        try:
+            self.playwright = await async_playwright().start()
+            self.browser = await self.playwright.chromium.launch(headless=True)
+            logger.info("Playwright browser initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Playwright: {e}")
+            await self.cleanup_playwright()
+            raise
+
+    async def cleanup_playwright(self):
+        """清理 Playwright 资源"""
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
+        self.browser = None
+        self.playwright = None
+        logger.info("Playwright browser cleaned up")
+
+    async def restart_playwright(self):
+        """重启 Playwright 浏览器"""
+        await self.cleanup_playwright()
+        await self.init_playwright()
+        self.last_restart_time = time.time()
+        logger.info("Playwright browser restarted")
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -94,92 +149,89 @@ class RealtimeUpdater:
             return '.SH'
         return ''
 
-    def select_data_source(self):
-        if is_trading_time():
-            source = 'tushare' # 'mairui'
-        else:
-            source = 'tushare'
-        logger.debug(f"Selected data source: {source} based on trading time")
-        return source
+    async def get_selenium_data_async(self, stock_codes):
+        updated_data = {}
 
-    def get_realtime_data(self, stock_codes, caller='global', source=None):
+        if not self.browser:
+            await self.restart_playwright()
+
         try:
-            # 判断是否为交易日和交易时间
-            is_trading_day = is_tradingday(datetime.now().date())
-            in_trading_time = is_trading_time()
-            
-            updated_data = {}
-
-            # 去重 stock_codes
-            stock_codes = list(set(stock_codes))
-
-            if not is_trading_day or not in_trading_time:
-                # 非交易日或非交易时间，全部从 tushare 获取
-                logger.debug(f"[{caller}] Non-trading day/time, fetching all from tushare")
-                ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in stock_codes]
-                batch_size = DATA_SOURCES['tushare'].get('batch_size', 10)
-                for i in range(0, len(ts_codes), batch_size):
-                    batch = ts_codes[i:i + batch_size]
-                    logger.debug(f"[{caller}] Fetching batch {i // batch_size + 1}: {batch}")
-                    df = ts.realtime_quote(ts_code=','.join(batch))
-                    batch_data = DataAdapter.tushare_adapter(df)
-                    logger.debug(f"[{caller}] Tushare batch data: {batch_data}")
+            page = await self.browser.new_page()
+            for code in stock_codes:
+                prefixed_code = f"{get_stock_prefix(code)}{code}"
+                url = DATA_SOURCES['selenium']['url_template'].format(prefixed_code)
+                try:
+                    await page.goto(url, wait_until="domcontentloaded")
+                    await page.wait_for_selector("div.sider_brief table.t1", timeout=5000)
+                    table = await page.query_selector("div.sider_brief table.t1")
+                    rows = await table.query_selector_all("tr")
+                    data = {"Stock Code": code}
+                    for row in rows:
+                        tds = await row.query_selector_all("td")
+                        for td in tds:
+                            text = await td.inner_text()
+                            key_value = text.split("：")
+                            if len(key_value) == 2:
+                                key, value = key_value
+                                data[key.strip()] = value.strip()
+                    batch_data = DataAdapter.selenium_adapter(data)
                     updated_data.update(batch_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch Playwright data for {code}: {e}")
+            await page.close()
+        except Exception as e:
+            logger.error(f"Playwright error, restarting: {e}")
+            await self.restart_playwright()
+        return updated_data
 
-            else:
-                # 交易日交易时间，分情况处理
-                custom_codes = [code for code in stock_codes if code in self.custom_stocks]
-                other_codes = [code for code in stock_codes if code not in self.custom_stocks]
+    def get_realtime_data(self, stock_codes, source, caller='global'):
+        with app.app_context():
+            try:
+                updated_data = {}
+                stock_codes = list(set(stock_codes))
+                logger.debug(f"[{caller}] Fetching {source} for {len(stock_codes)} stocks: {stock_codes}")
 
-                # custom_stocks 从 mairui 获取
-                if custom_codes:
-                    logger.debug(f"[{caller}] Fetching custom stocks from mairui: {len(custom_codes)}")
-                    rate_limit = DATA_SOURCES['mairui']['rate_limit']
-
-                    for code in stock_codes:                        
-                        max_retries = 3
-                        retry_count = 0
-                        success = False
-                        
-                        while retry_count < max_retries and not success:
-                            urls = [DATA_SOURCES['mairui']['main_url'], DATA_SOURCES['mairui']['backup_url']]
-                            for url_template in urls:
-                                url = url_template.format(code=code, licence=DATA_SOURCES['mairui']['licence'])
-                                try:
-                                    response = requests.get(url, timeout=5)
-                                    response.raise_for_status()
-                                    data = response.json()
-                                    logger.debug(f"[{caller}] Fetched data for {code}: {data}")
-                                    batch_data = DataAdapter.mairui_adapter(data, code)
-                                    logger.debug(f"[{caller}] Mairui batch data for {code}: {batch_data}")
-                                    updated_data.update(batch_data)
-                                    success = True
-                                    break
-                                except requests.RequestException as e:
-                                    logger.warning(f"[{caller}] Attempt {retry_count + 1} failed for {code} with {url}: {str(e)}")
-                                    retry_count += 1
-                                    if retry_count < max_retries:
-                                        gevent.sleep(1)
-                            if not success :
-                                logger.error(f"[{caller}] Failed to fetch data for {code} after {max_retries} retries")
-                        gevent.sleep(1 / rate_limit)
-
-                # 其他股票从 tushare 获取
-                if other_codes:
-                    logger.debug(f"[{caller}] Fetching other stocks from tushare: {len(other_codes)}")
-                    ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in other_codes]
-                    batch_size = DATA_SOURCES['tushare'].get('batch_size', 10)
+                if source == 'tushare':
+                    ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in stock_codes]
+                    batch_size = DATA_SOURCES[source].get('batch_size', 10)
                     for i in range(0, len(ts_codes), batch_size):
                         batch = ts_codes[i:i + batch_size]
                         df = ts.realtime_quote(ts_code=','.join(batch))
                         batch_data = DataAdapter.tushare_adapter(df)
                         updated_data.update(batch_data)
+                        gevent.sleep(60 / DATA_SOURCES[source]['limits']['per_minute'])  # 保留基本速率控制
 
-            logger.debug(f"[{caller}] Final updated_data from {source}")
-            return updated_data
-        except Exception as e:
-            logger.error(f"[{caller}] Error fetching realtime data from {source}: {str(e)}", exc_info=True)
-            return {}
+                elif source == 'mairui':
+                    codes_to_fetch = stock_codes
+                    batch_size = DATA_SOURCES[source].get('batch_size', 10)  # 可配置，默认 10
+                    for code in codes_to_fetch[:batch_size]:
+                        urls = [DATA_SOURCES[source]['main_url'], DATA_SOURCES[source]['backup_url']]
+                        success = False
+                        for url_template in urls:
+                            url = url_template.format(code=code, licence=DATA_SOURCES[source]['licence'])
+                            try:
+                                response = requests.get(url, timeout=5)
+                                response.raise_for_status()
+                                data = response.json()
+                                batch_data = DataAdapter.mairui_adapter(data, code)
+                                updated_data.update(batch_data)
+                                success = True
+                                break
+                            except requests.RequestException as e:
+                                logger.warning(f"[{caller}] Mairui request failed for {code}: {str(e)}")
+                        if not success:
+                            logger.error(f"[{caller}] Failed to fetch {code} from mairui")
+                        gevent.sleep(DATA_SOURCES[source]['rate_limit'])
+
+                elif source == 'selenium':
+                    loop = asyncio.get_event_loop()
+                    updated_data = loop.run_until_complete(self.get_selenium_data_async(stock_codes))
+
+                logger.debug(f"[{caller}] {source} updated_data: {updated_data}")
+                return updated_data
+            except Exception as e:
+                logger.error(f"[{caller}] Error fetching {source} data: {str(e)}", exc_info=True)
+                return {}
 
     def pool_update_task(self):
         logger.info("[global] Starting pool update task")
@@ -214,64 +266,75 @@ class RealtimeUpdater:
                 gevent.sleep(5)
             except Exception as e:
                 logger.error(f"[global] Error in pool update task: {str(e)}", exc_info=True)
-                gevent.sleep(5)  # 继续循环
+                gevent.sleep(5)
 
-    def data_update_task(self):
-        logger.info("[global] Starting data update task")
+    def data_update_task(self, source):
+        logger.info(f"[global] Starting {source} data update task")
         while self.running:
             try:
-                logger.debug(f"[global] Task running: {self.running}")
                 with stocks_pool_lock:
-                    local_stock_codes = list(stocks_pool.keys())
-                
+                    if source == 'mairui':
+                        local_stock_codes = [code for code in stocks_pool.keys() if code in self.custom_stocks]
+                    elif source == 'tushare':
+                        local_stock_codes = [code for code in stocks_pool.keys() if code not in self.custom_stocks]
+                    elif source == 'selenium':
+                        local_stock_codes = [code for code in stocks_pool.keys() if code not in self.custom_stocks]
+
                 if local_stock_codes:
                     with app.app_context():
-                        logger.debug("[global] Calling get_realtime_data")
-                        updated_data = self.get_realtime_data(local_stock_codes, caller='data_task')
-                        logger.debug(f"[global] Returned updated_data")
+                        logger.debug(f"[global] {source} updating {len(local_stock_codes)} stocks")
+                        updated_data = self.get_realtime_data(local_stock_codes, source, caller=f'{source}_task')
                         if updated_data:
                             with self.realtime_lock:
-                                self.realtime_data.clear()
                                 self.realtime_data.update(updated_data)
-                            #发送实时更新处理, 第一个参数是特定的event名称
                             socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
-                            logger.debug(f"[global] realtime Emitted ")
-                        else:
-                            logger.warning("[global] No data returned from get_realtime_data")
+                            logger.debug(f"[global] {source} emitted: {updated_data}")
 
+                # 检查是否需要重启 Playwright
+                if source == 'selenium' and (time.time() - self.last_restart_time) >= self.restart_interval:
+                    asyncio.run(self.restart_playwright())
+
+                in_trading_time = is_trading_time()
+                sleep_time = DATA_SOURCES[source]['update_interval']['non_trading_time'] if not in_trading_time else DATA_SOURCES[source]['update_interval']['trading_time']
+                
+                
                 # 根据交易时间动态调整 sleep 时间
                 # 判断是否为交易日和交易时间
                 is_trading_day = is_tradingday(datetime.now().date())
-                in_trading_time = is_trading_time()
-                if is_trading_day and in_trading_time:
-                    sleep_time = 10  # 交易时间 sleep 10 秒
+                current_time = datetime.now().time()
+                morning_start = dt_time(9, 10)
+   
+                if  is_trading_day and ( current_time< morning_start) : #早于交易时间
+                    now = datetime.now()
+                    target_time = now.replace(hour=9, minute=10, second=0, microsecond=0)
+                    if now < target_time:
+                        # 如果当前时间在 9:10 之前，计算休眠时间
+                        time_diff = (target_time - now).total_seconds()
+                        gevent.sleep(time_diff)
                 else:
-                    sleep_time = 600  # 非交易时间 sleep 1800 秒（30 分钟）
+                    gevent.sleep(sleep_time)
 
-                gevent.sleep(sleep_time)
             except Exception as e:
-                logger.error(f"[global] Error in data update task: {str(e)}", exc_info=True)
-                # 异常时仍根据交易时间调整 sleep
-                if is_trading_time():
-                    gevent.sleep(10)
-                else:
-                    gevent.sleep(1800)
-        logger.info("[global] Data update task stopped")
+                logger.error(f"[global] Error in {source} data update task: {str(e)}", exc_info=True)
+                gevent.sleep(60)
+        logger.info(f"[global] {source} data update task stopped")
 
     def start(self):
         if not self.running:
             with app.app_context():
-                self.sync_latest_stocks()  # 确保启动时填充
-                logger.debug(f"[global] Initial stocks_pool after sync: {stocks_pool}")
+                self.sync_latest_stocks()
+                logger.debug(f"[global] Initial stocks_pool: {stocks_pool}")
             self.running = True
             socketio.start_background_task(self.pool_update_task)
-            socketio.start_background_task(self.data_update_task)
-            logger.info("[global] Realtime updater started with background tasks")
-            gevent.sleep(1)  # 等待任务启动
-            logger.debug("[global] Background tasks started")
+            #self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
+            self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
+            self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
+            logger.info("[global] Realtime updater started with multi-source tasks")
+            gevent.sleep(1)
 
     def stop(self):
         self.running = False
+        asyncio.run(self.cleanup_playwright())
         logger.info("[global] Realtime updater stopped")
 
     def sync_latest_stocks(self):
@@ -316,3 +379,4 @@ def update_stocks_pool(new_stock_codes, caller='unknown'):
 def get_realtime_data():
     with global_updater.realtime_lock:
         return global_updater.realtime_data.copy()
+

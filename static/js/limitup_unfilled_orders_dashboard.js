@@ -55,6 +55,10 @@ document.addEventListener('DOMContentLoaded', function() {
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
+        updatePagination(pagination, filteredData.length); // 更新分页信息
+        sortData(filteredData, sortRules, sortRules.length > 0 ? sortRules[0].field : 'StockCode', { shiftKey: false });
+        renderTable();
+        saveState();
     });
 
     // 修正排序逻辑，直接渲染排序后的 filteredData
@@ -198,6 +202,10 @@ function applyFilters() {
     const unpinned = filteredData.filter(stock => !pinnedStocks.has(stock.StockCode));
     filteredData = [...pinned, ...unpinned];
 
+    // **每次筛选后，自动按照当前的排序规则重新排序**
+    if (sortRules.length > 0) {
+        sortData(filteredData, sortRules, sortRules[0].field, { shiftKey: false });
+    }
     updatePagination(pagination, filteredData.length);
     renderTable();
     console.log('Filtered data length after applyFilters:', filteredData.length);
