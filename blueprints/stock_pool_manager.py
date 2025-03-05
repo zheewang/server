@@ -1,18 +1,20 @@
-from flask_socketio import emit
-import gevent.lock
-import gevent.queue
-from app_init import app, db, socketio
-import tushare as ts
+import zmq
 import gevent
+import gevent.queue
+import gevent.lock
 import time
-import requests
 import logging
+import requests
+from flask_socketio import emit
+from app_init import app, socketio
+from blueprints.custom_stock import read_stock_codes
+from multiprocessing import Process, Manager
 import yaml
 from datetime import datetime, time as dt_time
-from blueprints.custom_stock import read_stock_codes
-from multiprocessing import Process, Queue,Manager
+import tushare as ts
 
 logger = app.logger
+
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 DATA_SOURCES = config['data_sources']
@@ -91,15 +93,15 @@ class DataAdapter:
 class RealtimeUpdater:
     def __init__(self):
         self.manager = Manager()
-        self.stocks_pool = self.manager.dict()  # 使用共享字典
+        self.stocks_pool = self.manager.dict()  # 共享股票池
         self.realtime_data = self.manager.dict()  # 共享实时数据
         self.realtime_lock = gevent.lock.Semaphore()
         self.running = False
-        self.selenium_queue = gevent.queue.Queue()  # 让 Selenium 进程返回数据
-        self.global_update_queue = gevent.queue.Queue()  # 让 global_updater 发送请求
-        self.selenium_process = None
 
-        self.source_tasks = {}
+        # ZeroMQ 客户端
+        self.zmq_context = zmq.Context()
+        self.zmq_socket = self.zmq_context.socket(zmq.REQ)  # 请求模式
+        self.zmq_socket.connect("tcp://127.0.0.1:5555")  # 连接 Selenium 服务器
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -114,32 +116,21 @@ class RealtimeUpdater:
         with app.app_context():
             try:
                 updated_data = {}
-                stock_codes = list(set(stock_codes))
-                logger.debug(f"[{caller}] Fetching {source} for {len(stock_codes)} stocks: {stock_codes}")
-
+                """获取实时股票数据"""
+                stock_codes = list(set(stock_codes))  # 去重
+                logger.debug(f"[RealtimeUpdater] Fetching {source} for {len(stock_codes)} stocks: {stock_codes}")
+              
                 if source == 'selenium':
-                    self.global_update_queue.put(stock_codes)  # 请求 Selenium 更新
-                    logger.debug(f"[{caller}] Sent {stock_codes} to Selenium process")
+                    try:
+                        self.zmq_socket.send_json({"stocks": stock_codes})  # 发送请求
+                        if self.zmq_socket.poll(10000):  # 最多等待 10 秒
+                            response = self.zmq_socket.recv_json()  # 获取数据
+                            updated_data = DataAdapter.selenium_adapter(response)  # 解析数据
+                        else:
+                            logger.warning("[RealtimeUpdater] Timeout waiting for Selenium response")
+                    except Exception as e:
+                        logger.error(f"[RealtimeUpdater] Error in ZeroMQ communication: {e}")
 
-                    # 轮询等待 Selenium 数据，异步检查
-                    updated_data = {}
-                    start_time = time.time()
-                    while time.time() - start_time < 10:  # 轮询 10 秒
-                        try:
-                            batch_data = self.selenium_queue.get_nowait()  # 非阻塞获取数据
-                            updated_data.update(batch_data)
-                            if updated_data:  # 数据已返回，立即结束
-                                break
-                        except gevent.queue.Empty:
-                            gevent.sleep(0.5)  # 短暂休眠，避免高 CPU 占用
-
-                    if updated_data:
-                        with self.realtime_lock:
-                            self.realtime_data.update(updated_data)
-                        return updated_data
-                    else:
-                        logger.warning(f"[{caller}] No Selenium data received within timeout")
-                        return {}
                     gevent.sleep(60)
 
                 elif source == 'tushare':
@@ -215,24 +206,6 @@ class RealtimeUpdater:
                 logger.error(f"[global] Error in pool update task: {str(e)}", exc_info=True)
                 gevent.sleep(5)
 
-    def selenium_listener_task(self):
-        """监听 Selenium 进程发送的数据"""
-        logger.info("[global] Starting Selenium listener task")
-        while self.running:
-            try:
-                updated_data = self.selenium_queue.get_nowait()
-                if updated_data:
-                    with self.realtime_lock:
-                        self.realtime_data.update(updated_data)
-                    with app.app_context():
-                        socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
-                    logger.debug(f"[global] Selenium data received and emitted: {updated_data}")
-                gevent.sleep(1)  # 短暂休眠，避免高 CPU 占用
-            except gevent.queue.Empty:
-                gevent.sleep(1)
-            except Exception as e:
-                logger.error(f"[global] Error in Selenium listener task: {str(e)}", exc_info=True)
-                gevent.sleep(5)
 
     def data_update_task(self, source):
         logger.info(f"[global] Starting {source} data update task")
@@ -269,17 +242,13 @@ class RealtimeUpdater:
             with app.app_context():
                 self.sync_latest_stocks()
                 logger.debug(f"[global] Initial stocks_pool: {stocks_pool}")
-                
+
             self.running = True
 
             socketio.start_background_task(self.pool_update_task)
             socketio.start_background_task(self.selenium_listener_task)
             #self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
             self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
-            self.selenium_process = Process(
-                    target=selenium_process, args=(self.selenium_queue, self.global_update_queue))
-            self.selenium_process.start()
-            logger.info("[global] Realtime updater started with multi-source tasks and Selenium process")
             gevent.sleep(1)
 
     def stop(self):
