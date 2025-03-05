@@ -116,11 +116,11 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('syncToBackendBtn not found in DOM');
     }
 
-    // 每隔10分钟自动保存到后端
-    setInterval(autoSaveStockCodes, 10 * 60 * 1000);  // 10分钟 = 600秒 = 600,000毫秒
+    // 每隔30分钟自动保存到后端
+    //setInterval(autoSaveStockCodes, 30 * 60 * 1000);  // 10分钟 = 600秒 = 600,000毫秒
 
     // 每分钟检测 watchlist 变化并同步
-    setInterval(checkAndSyncWatchlist, 30 * 1000);  // 每30s检查一次
+    //setInterval(checkAndSyncWatchlist, 300 * 1000);  // 每5分钟检查一次
 });
 
 function fetchData(newStockCode = null) {
