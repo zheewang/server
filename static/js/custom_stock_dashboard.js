@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchData();
     }
 
+
     makeTableSortable();
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
     bindSortEvents(filteredData, sortRules, renderTable, saveState);
