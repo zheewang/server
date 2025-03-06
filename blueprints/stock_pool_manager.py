@@ -14,7 +14,7 @@ import requests
 import yaml
 from datetime import datetime, time as dt_time
 import zmq
-
+from gevent.pool import Pool
 
 
 logger = app.logger
@@ -120,14 +120,14 @@ class RealtimeUpdater:
             return '.SH'
         return ''
     
+
     def fetch_selenium_async(self, stock_codes, caller):
         start_time = time.time()
         socket = self.zmq_socket
         batch_size = 10 #min(30, max(10, len(stock_codes) // 5))  # 动态批次大小 ,如果股票代码太多，就设置批次大小为 30
-        sleep_interval = 0.05 if len(stock_codes) < 100 else 0.1 # 小批量更快
+        pool = Pool(3)  # 并发 3 个批次
 
-        for i in range(0, len(stock_codes), batch_size):
-            batch_codes = stock_codes[i:i + batch_size]
+        def fetch_batch(batch_codes, batch_num, total_batches):
             request = {"stocks": batch_codes}
             retries = 1
             for attempt in range(retries + 1):
@@ -139,16 +139,20 @@ class RealtimeUpdater:
                         with self.realtime_lock:
                             self.realtime_data.update(data)
                         socketio.emit('realtime_update', data, namespace='/stocks_realtime')
-                        logger.debug(f"[{caller}] Gevent Selenium batch {i//batch_size + 1}/{len(stock_codes)//batch_size + 1} received: {data}")
+                        logger.debug(f"[{caller}] Gevent Selenium batch {batch_num}/{total_batches} received: {data}")
                         break
                     else:
-                        logger.warning(f"[{caller}] Timeout waiting for Selenium batch {i//batch_size + 1}, attempt {attempt + 1}")
+                        logger.warning(f"[{caller}] Timeout waiting for Selenium batch {batch_num}, attempt {attempt + 1}")
                         if attempt == retries:
                             break
                 except Exception as e:
-                    logger.error(f"[{caller}] Error in Selenium batch {i//batch_size + 1}: {e}")
+                    logger.error(f"[{caller}] Error in Selenium batch {batch_num}: {e}")
                     break
-            gevent.sleep(sleep_interval)
+
+        batches = [stock_codes[i:i + batch_size] for i in range(0, len(stock_codes), batch_size)]
+        total_batches = len(batches)
+        pool.map(lambda idx: fetch_batch(batches[idx], idx + 1, total_batches), range(total_batches))
+        pool.join()
         logger.info(f"[{caller}] Fetching {len(stock_codes)} stocks via Selenium took {time.time() - start_time:.2f} seconds")
 
 
