@@ -106,6 +106,10 @@ class RealtimeUpdater:
         self.realtime_lock = gevent.lock.Semaphore()
         self.running = False
         self.source_tasks = {}
+        self.custom_stocks = []  # 添加默认空列表
+        self.zmq_context = zmq.Context()  # 单例上下文
+        self.zmq_socket = self.zmq_context.socket(zmq.REQ)
+        self.zmq_socket.connect("tcp://127.0.0.1:5555")
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -115,15 +119,12 @@ class RealtimeUpdater:
         elif first_digit == 6:
             return '.SH'
         return ''
-
+    
     def fetch_selenium_async(self, stock_codes, caller):
-        """使用 gevent 的非阻塞方式获取 Selenium 数据"""
         start_time = time.time()
-        context = zmq.Context()
-        socket = context.socket(zmq.REQ)
-        socket.connect("tcp://127.0.0.1:5555")
+        socket = self.zmq_socket
         batch_size = 10 #min(30, max(10, len(stock_codes) // 5))  # 动态批次大小 ,如果股票代码太多，就设置批次大小为 30
-        sleep_interval = 0.05 if len(stock_codes) < 100 else 0.1  # 小批量更快
+        sleep_interval = 0.05 if len(stock_codes) < 100 else 0.1 # 小批量更快
 
         for i in range(0, len(stock_codes), batch_size):
             batch_codes = stock_codes[i:i + batch_size]
@@ -147,9 +148,9 @@ class RealtimeUpdater:
                 except Exception as e:
                     logger.error(f"[{caller}] Error in Selenium batch {i//batch_size + 1}: {e}")
                     break
-            gevent.sleep(0.05 if len(stock_codes) < 100 else 0.1)
-        socket.close()
+            gevent.sleep(sleep_interval)
         logger.info(f"[{caller}] Fetching {len(stock_codes)} stocks via Selenium took {time.time() - start_time:.2f} seconds")
+
 
     def get_realtime_data(self, stock_codes, source, caller='global'):
         with app.app_context():
@@ -324,6 +325,8 @@ class RealtimeUpdater:
 
     def stop(self):
         self.running = False
+        self.zmq_socket.close()  # 关闭 socket
+        self.zmq_context.term()  # 终止上下文
         logger.info("[global] Realtime updater stopped")
 
     def sync_latest_stocks(self):
