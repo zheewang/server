@@ -136,10 +136,14 @@ class RealtimeUpdater:
                     timeout = 15000 #min(15000, max(8000, len(batch_codes) * 1000))  # 每只股票 1 秒，最小 8 秒，最大 15 秒
                     if socket.poll(timeout):
                         data = socket.recv_json()
+                        logger.debug(f"[{caller}] Gevent Selenium batch {batch_num}/{total_batches} received: {data}")
                         with self.realtime_lock:
                             self.realtime_data.update(data)
-                        socketio.emit('realtime_update', data, namespace='/stocks_realtime')
-                        logger.debug(f"[{caller}] Gevent Selenium batch {batch_num}/{total_batches} received: {data}")
+                        try:
+                            socketio.emit('realtime_update', data, namespace='/stocks_realtime')
+                        except Exception as e:
+                            logger.error(f"[{caller}] Error emitting realtime_update: {e}")
+                        
                         break
                     else:
                         logger.warning(f"[{caller}] Timeout waiting for Selenium batch {batch_num}, attempt {attempt + 1}")
@@ -284,8 +288,12 @@ class RealtimeUpdater:
                                     for code, data in updated_data.items():
                                         data['last_updated'] = time.time()
                                         self.realtime_data[code] = data
-                                socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
-                                logger.debug(f"[global] {source} emitted: {updated_data}")
+                                try:
+                                    socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
+                                    logger.debug(f"[global] {source} emitted: {updated_data}")
+                                except Exception as e:
+                                    logger.error(f"[global] Error emitting realtime_update: {e}")
+
                         else:
                             logger.debug(f"[global] No expired stocks to update for {source}")
 
