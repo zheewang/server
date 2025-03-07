@@ -141,6 +141,7 @@ class RealtimeUpdater:
                             self.realtime_data.update(data)
                         try:
                             socketio.emit('realtime_update', data, namespace='/stocks_realtime')
+                            logger.debug(f"[{caller}] emitted: {data}")
                         except Exception as e:
                             logger.error(f"[{caller}] Error emitting realtime_update: {e}")
                         
