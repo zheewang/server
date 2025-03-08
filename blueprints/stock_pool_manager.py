@@ -134,15 +134,18 @@ class RealtimeUpdater:
         start_time = time.time()
         total_stocks = len(stock_codes)
         received_stocks = set()
-        done = False
-        timeout = max(15000, total_stocks * 500)  # 每股票 0.5 秒，最小 15 秒
+        timeout = max(15000, total_stocks * 500)
         retries = 2
 
+        remaining_codes = set(stock_codes)
         for attempt in range(retries + 1):
-            self.pub_socket.send_json({"stocks": stock_codes})
-            logger.debug(f"[{caller}] Sent initial request (attempt {attempt + 1}/{retries + 1}) for {total_stocks} stocks to port 5556")
+            if not remaining_codes:
+                break
+            self.pub_socket.send_json({"stocks": list(remaining_codes)})
+            logger.debug(f"[{caller}] Sent request (attempt {attempt + 1}/{retries + 1}) for {len(remaining_codes)} stocks to port 5556")
             gevent.sleep(1)
 
+            done = False
             while not done:
                 try:
                     if self.sub_socket.poll(timeout):
@@ -151,7 +154,7 @@ class RealtimeUpdater:
                             logger.debug(f"[{caller}] Received completion signal")
                             done = True
                         else:
-                            logger.debug(f"[{caller}] Received batch data: {data}")
+                            logger.debug(f"[{caller}] Received batch data with {len(data)} items")
                             with self.realtime_lock:
                                 current_time = time.time()
                                 for code, info in data.items():
@@ -162,54 +165,17 @@ class RealtimeUpdater:
                                 self.emit_updates(data)
                     else:
                         logger.warning(f"[{caller}] Timeout waiting for batch data, received {len(received_stocks)}/{total_stocks} stocks")
-                        if attempt < retries:
-                            logger.info(f"[{caller}] Retrying request...")
-                            break
                         done = True
                 except Exception as e:
                     logger.error(f"[{caller}] Error receiving batch: {e}")
-                    break
-            if len(received_stocks) == total_stocks:
-                break
+                    done = True
+            remaining_codes = set(stock_codes) - received_stocks
+            if remaining_codes and attempt < retries:
+                logger.info(f"[{caller}] Retrying {len(remaining_codes)} missing stocks: {remaining_codes}")
 
-        missing_stocks = set(stock_codes) - received_stocks
-        if missing_stocks: #在检测到缺失股票后，单独重试这些股票：
-                logger.warning(f"[{caller}] Missing data for stocks after initial attempts: {missing_stocks}")
-                # 单独重试缺失股票
-                retry_start_time = time.time()
-                self.pub_socket.send_json({"stocks": list(missing_stocks)})
-                logger.info(f"[{caller}] Sent retry request for {len(missing_stocks)} missing stocks: {missing_stocks}")
-                gevent.sleep(1)
-
-                retry_done = False
-                while not retry_done:
-                    try:
-                        if self.sub_socket.poll(timeout):
-                            data = self.sub_socket.recv_json()
-                            if "done" in data and data["done"]:
-                                logger.debug(f"[{caller}] Received completion signal for retry")
-                                retry_done = True
-                            else:
-                                logger.debug(f"[{caller}] Received retry batch data: {data}")
-                                with self.realtime_lock:
-                                    current_time = time.time()
-                                    for code, info in data.items():
-                                        info['last_updated'] = current_time
-                                        self.realtime_data[code] = info
-                                        received_stocks.add(code)
-                                with app.app_context():
-                                    self.emit_updates(data)
-                        else:
-                            logger.warning(f"[{caller}] Timeout waiting for retry batch data, still missing: {set(stock_codes) - received_stocks}")
-                            retry_done = True
-                    except Exception as e:
-                        logger.error(f"[{caller}] Error receiving retry batch: {e}")
-                        retry_done = True
-
-                final_missing = set(stock_codes) - received_stocks
-                if final_missing:
-                    logger.error(f"[{caller}] Failed to fetch data for stocks after retry: {final_missing}")
-
+        if remaining_codes:
+            logger.error(f"[{caller}] Failed to fetch data for stocks after retries: {remaining_codes}")
+                
         logger.info(f"[{caller}] Fetching {total_stocks} stocks via Selenium took {time.time() - start_time:.2f} seconds, received {len(received_stocks)} stocks")
 
 

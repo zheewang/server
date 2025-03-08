@@ -6,6 +6,9 @@ import asyncio
 import zmq.asyncio
 from concurrent.futures import ThreadPoolExecutor
 import math
+import yaml
+
+
 
 # 设置日志级别为 DEBUG，输出到文件
 logging.basicConfig(
@@ -16,6 +19,10 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+DATA_SOURCES = config['data_sources']
 
 def get_stock_prefix(stock_code):
     first_char = stock_code[0]
@@ -41,8 +48,11 @@ async def fetch_one_stock(browser, code, url_template):
     try:
         print(f"Fetching data for stock {code} from {url}")
         logger.debug(f"Navigating to {url} for {code}")
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        table = await page.wait_for_selector("div.sider_brief table.t1", timeout=10000)
+        # 从配置读取超时，默认为 30000 和 10000
+        goto_timeout = DATA_SOURCES['selenium'].get('timeouts', {}).get('goto', 30000)
+        selector_timeout = DATA_SOURCES['selenium'].get('timeouts', {}).get('selector', 10000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=goto_timeout)
+        table = await page.wait_for_selector("div.sider_brief table.t1", timeout=selector_timeout)
         if not table:
             logger.warning(f"Table 'div.sider_brief table.t1' not found for {code} at {url}")
             return updated_data
@@ -97,28 +107,43 @@ async def fetch_stock_batch(batch_codes, url_template):
                 missing_codes.discard(code)
         elif isinstance(result, Exception):
             logger.error(f"Batch task failed with exception: {result}")
+    
+    # 数据验证
+    for code, data in valid_results.items():
+        if not data or 'RealtimePrice' not in data:
+            logger.warning(f"Invalid data for {code}: {data}")
+            del valid_results[code]
+            missing_codes.add(code)
+    
     if missing_codes:
-        logger.warning(f"Missing data in batch for codes: {missing_codes}")
+        logger.warning(f"Missing or invalid data in batch for codes: {missing_codes}")
     return valid_results
 
 def process_batch_sync(batch_codes, url_template):
     return asyncio.run(fetch_stock_batch(batch_codes, url_template))
 
 async def fetch_stock_data(stock_codes, url_template, socket):
-    batch_size = 50
+    batch_size = 30
     num_batches = math.ceil(len(stock_codes) / batch_size)
     batches = [stock_codes[i:i + batch_size] for i in range(0, len(stock_codes), batch_size)]
-
-    logger.debug(f"Processing {len(stock_codes)} stocks in {num_batches} batches")
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    max_workers = min(10, max(1, len(stock_codes) // 20))  # 动态调整线程数
+    
+    logger.debug(f"Processing {len(stock_codes)} stocks in {num_batches} batches with {max_workers} workers")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_batch_sync, batch, url_template) for batch in batches]
         for idx, future in enumerate(futures, 1):
-            try:
-                data = future.result()
-                await socket.send_json(data)
-                logger.debug(f"Sent batch {idx}/{num_batches} data: {data}")
-            except Exception as e:
-                logger.error(f"Batch {idx} processing failed: {e}")
+            retries = 2
+            for attempt in range(retries + 1):
+                try:
+                    data = future.result(timeout=60)  # 每个批次等待最多 60 秒
+                    await socket.send_json(data)
+                    logger.debug(f"Sent batch {idx}/{num_batches} data: {data}")
+                    break
+                except Exception as e:
+                    if attempt < retries:
+                        logger.warning(f"Batch {idx} failed on attempt {attempt + 1}/{retries + 1}: {e}, retrying...")
+                    else:
+                        logger.error(f"Batch {idx} failed after {retries + 1} attempts: {e}")
     
     await socket.send_json({"done": True})
     logger.debug("Sent completion signal: {'done': True}")
@@ -134,10 +159,7 @@ async def main():
     sub_socket.bind("tcp://*:5556")
     sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
-    with open('config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
-    DATA_SOURCES = config['data_sources']
-    url_template = DATA_SOURCES['selenium']['url_template']
+    url_template = DATA_SOURCES['selenium']['url_template']  # 使用全局 DATA_SOURCES
 
     logger.debug("Server entering main loop")
     while True:
