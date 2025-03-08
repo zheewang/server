@@ -125,7 +125,7 @@ class RealtimeUpdater:
         start_time = time.time()
         socket = self.zmq_socket
         batch_size = 10 #min(30, max(10, len(stock_codes) // 5))  # 动态批次大小 ,如果股票代码太多，就设置批次大小为 30
-        pool = Pool(3)  # 并发 3 个批次
+        pool = Pool(1)  # 并发 3 个批次
 
         def fetch_batch(batch_codes, batch_num, total_batches):
             request = {"stocks": batch_codes}
@@ -139,13 +139,14 @@ class RealtimeUpdater:
                         logger.debug(f"[{caller}] Gevent Selenium batch {batch_num}/{total_batches} received: {data}")
                         with self.realtime_lock:
                             self.realtime_data.update(data)
-                        try:
-                            socketio.emit('realtime_update', data, namespace='/stocks_realtime')
-                            logger.debug(f"[{caller}] emitted: {data}")
-                        except Exception as e:
-                            logger.error(f"[{caller}] Error emitting realtime_update: {e}")
+                        with app.app_context():  # 显式添加上下文    
+                            try:
+                                socketio.emit('realtime_update', data, namespace='/stocks_realtime')
+                                logger.debug(f"[{caller}] emitted: {data}")
+                            except Exception as e:
+                                logger.error(f"[{caller}] Error emitting realtime_update: {e}")
                         
-                        break
+                        break  #不再attempt
                     else:
                         logger.warning(f"[{caller}] Timeout waiting for Selenium batch {batch_num}, attempt {attempt + 1}")
                         if attempt == retries:
