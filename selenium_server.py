@@ -39,13 +39,12 @@ async def fetch_one_stock(browser, code, url_template):
     page = await context.new_page()
     
     try:
-        # 显示正在爬取的请求
         print(f"Fetching data for stock {code} from {url}")
         logger.debug(f"Navigating to {url} for {code}")
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         table = await page.wait_for_selector("div.sider_brief table.t1", timeout=10000)
         if not table:
-            logger.warning(f"Table not found for {code}")
+            logger.warning(f"Table 'div.sider_brief table.t1' not found for {code} at {url}")
             return updated_data
 
         rows = await table.query_selector_all("tr")
@@ -70,10 +69,10 @@ async def fetch_one_stock(browser, code, url_template):
             }
             logger.debug(f"Parsed data for {code}: {updated_data[code]}")
         except (ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse data for {code}: {e}")
+            logger.warning(f"Failed to parse price data for {code}: {e}, raw data: {data}")
         return updated_data
     except Exception as e:
-        logger.error(f"Error fetching {code}: {e}")
+        logger.error(f"Error fetching {code} from {url}: {e}")
         return {}
     finally:
         try:
@@ -90,11 +89,16 @@ async def fetch_stock_batch(batch_codes, url_template):
         await browser.close()
     
     valid_results = {}
+    missing_codes = set(batch_codes)
     for result in results:
         if isinstance(result, dict):
             valid_results.update(result)
+            for code in result:
+                missing_codes.discard(code)
         elif isinstance(result, Exception):
-            logger.error(f"Batch task failed: {result}")
+            logger.error(f"Batch task failed with exception: {result}")
+    if missing_codes:
+        logger.warning(f"Missing data in batch for codes: {missing_codes}")
     return valid_results
 
 def process_batch_sync(batch_codes, url_template):
