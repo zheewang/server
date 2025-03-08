@@ -17,7 +17,6 @@ let filteredData = [];
 let sortRules = [];
 let pinnedStocks = new Set(JSON.parse(sessionStorage.getItem('pinnedStocks') || '[]'));
 let hiddenStocks = new Set(JSON.parse(sessionStorage.getItem('hiddenStocks') || '[]'));
-let watchlist = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}').stockData || [];
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'limitup_unfilled_orders_dashboard';
@@ -55,10 +54,6 @@ document.addEventListener('DOMContentLoaded', function() {
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
-        updatePagination(pagination, filteredData.length); // 更新分页信息
-        sortData(filteredData, sortRules, sortRules.length > 0 ? sortRules[0].field : 'StockCode', { shiftKey: false });
-        renderTable();
-        saveState();
     });
 
     // 修正排序逻辑，直接渲染排序后的 filteredData
@@ -202,10 +197,6 @@ function applyFilters() {
     const unpinned = filteredData.filter(stock => !pinnedStocks.has(stock.StockCode));
     filteredData = [...pinned, ...unpinned];
 
-    // **每次筛选后，自动按照当前的排序规则重新排序**
-    if (sortRules.length > 0) {
-        sortData(filteredData, sortRules, sortRules[0].field, { shiftKey: false });
-    }
     updatePagination(pagination, filteredData.length);
     renderTable();
     console.log('Filtered data length after applyFilters:', filteredData.length);
@@ -248,25 +239,6 @@ function updateShowAllHiddenButton() {
     } else {
         console.error('showAllHiddenBtn not found in DOM');
     }
-}
-
-function toggleWatchlist(stock, button) {
-    const stockCode = stock.StockCode;
-    const isInWatchlist = watchlist.some(w => w.StockCode === stockCode);
-
-    if (isInWatchlist) {
-        watchlist = watchlist.filter(w => w.StockCode !== stockCode);
-        button.textContent = 'Add to watchlist';
-        button.disabled = false;
-    } else {
-        watchlist.push(stock);
-        button.textContent = 'Remove from watchlist';
-        button.disabled = true;
-    }
-
-    const customState = JSON.parse(sessionStorage.getItem('custom_stock_dashboard_state') || '{}');
-    customState.stockData = watchlist;
-    sessionStorage.setItem('custom_stock_dashboard_state', JSON.stringify(customState));
 }
 
 function renderTable() {
@@ -318,10 +290,6 @@ function renderTable() {
             <td>
                 <button class="btn pin-btn" data-stock-code="${stock.StockCode}">${pinnedStocks.has(stock.StockCode) ? 'Unpin' : 'Pin'}</button>
                 <button class="btn hide-btn" data-stock-code="${stock.StockCode}">${hiddenStocks.has(stock.StockCode) ? 'Show' : 'Hide'}</button>
-                
-                <button class="btn watchlist-btn" data-stock-code="${stock.StockCode}" ${watchlist.some(w => w.StockCode === stock.StockCode) ? 'disabled' : ''}>
-                    ${watchlist.some(w => w.StockCode === stock.StockCode) ? 'Remove from watchlist' : 'Add to watchlist'}
-                </button>
             </td>
         `;
 
@@ -330,11 +298,8 @@ function renderTable() {
 
         const pinBtn = row.querySelector('.pin-btn');
         const hideBtn = row.querySelector('.hide-btn');
-        const watchlistBtn = row.querySelector('.watchlist-btn');
-
         pinBtn.addEventListener('click', () => togglePin(stock.StockCode));
         hideBtn.addEventListener('click', () => toggleHide(stock.StockCode));
-        watchlistBtn.addEventListener('click', () => toggleWatchlist(stock, watchlistBtn));
 
         // console.log(`Rendered row ${rowIndex}:`, stock);
 

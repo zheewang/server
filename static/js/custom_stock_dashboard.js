@@ -16,8 +16,6 @@ let stockData = [];
 let filteredData = [];  // 新增
 let sortRules = [];
 let deletedStocks = new Set();
-let lastSyncedStockData = [];  // 记录上次同步的 stockData，用于比较
-
 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'custom_stock_dashboard';
@@ -31,7 +29,6 @@ document.addEventListener('DOMContentLoaded', function() {
         filteredData = stockData;  // 初始化 filteredData
         sortRules = savedState.sortRules || [];
         deletedStocks = new Set(savedState.deletedStocks || []);
-        lastSyncedStockData = [...stockData];  // 初始化上次同步数据
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('newStockCode').value = savedState.newStockCode || '';
         if (stockData.length > 0) {
@@ -44,7 +41,6 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchData();
     }
 
-
     makeTableSortable();
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
     bindSortEvents(filteredData, sortRules, renderTable, saveState);
@@ -52,24 +48,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
-        applyFilters(); // 重新过滤数据
-        updatePagination(pagination, filteredData.length); // 更新分页信息
-        sortData(filteredData, sortRules, sortRules.length > 0 ? sortRules[0].field : 'StockCode', { shiftKey: false });
+        updatePagination(pagination, stockData.length);
         renderTable();
         saveState();
-    });
-
-
-    // 监听 sessionStorage 变化，确保 watchlist 更新
-    window.addEventListener('storage', function(event) {
-        if (event.key === `${PAGE_KEY}_state`) {
-            const newState = JSON.parse(event.newValue || '{}');
-            stockData = newState.stockData || [];
-            deletedStocks = new Set(newState.deletedStocks || []);
-            updatePagination(pagination, stockData.length);
-            renderTable();
-            saveState();
-        }
     });
 
     document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
@@ -108,20 +89,6 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('saveStockCodesBtn not found in DOM');
     }
-
-    // 新增：手动同步按钮
-    const syncBtn = document.getElementById('syncToBackendBtn');
-    if (syncBtn) {
-        syncBtn.addEventListener('click', syncToBackend);
-    } else {
-        console.error('syncToBackendBtn not found in DOM');
-    }
-
-    // 每隔30分钟自动保存到后端
-    //setInterval(autoSaveStockCodes, 30 * 60 * 1000);  // 10分钟 = 600秒 = 600,000毫秒
-
-    // 每分钟检测 watchlist 变化并同步
-    //setInterval(checkAndSyncWatchlist, 300 * 1000);  // 每5分钟检查一次
 });
 
 function fetchData(newStockCode = null) {
@@ -173,10 +140,6 @@ function applyFilters() {  // 新增
         !deletedStocks.has(stock.StockCode) &&
         (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
     );
-    // **每次筛选后，自动按照当前的排序规则重新排序**
-    if (sortRules.length > 0) {
-        sortData(filteredData, sortRules, sortRules[0].field, { shiftKey: false });
-    }
     updatePagination(pagination, filteredData.length);
     renderTable();
     saveState();
@@ -216,7 +179,6 @@ function saveStockCodes() {
     })
     .then(data => {
         alert(data.message || 'Stock codes saved successfully');
-        lastSyncedStockData = [...stockData];  // 更新上次同步数据
         saveState();
     })
     .catch(error => {
@@ -224,70 +186,6 @@ function saveStockCodes() {
         alert('Failed to save stock codes');
         saveState();
     });
-}
-
-// 新增：自动保存函数
-function autoSaveStockCodes() {
-    const stockCodes = stockData.map(stock => stock.StockCode);
-    fetch(`${BASE_URL}/api/save_stock_codes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stock_codes: stockCodes })
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        console.log('Auto-saved stock codes:', data.message || 'Success');
-        lastSyncedStockData = [...stockData];  // 更新上次同步数据
-        saveState();
-    })
-    .catch(error => {
-        console.error('Auto-save failed:', error);
-    });
-}
-
-// 新增：检查 watchlist 变化并同步
-function checkAndSyncWatchlist() {
-    const currentState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`) || '{}');
-    const currentStockData = currentState.stockData || [];
-
-    // 比较当前 stockData 与上次同步的 stockData
-    const hasChanged = JSON.stringify(currentStockData.map(s => s.StockCode)) !== JSON.stringify(lastSyncedStockData.map(s => s.StockCode));
-    if (hasChanged) {
-        console.log('Watchlist changed, syncing to backend...');
-        stockData = [...currentStockData];  // 更新本地 stockData
-        syncToBackend();
-    }
-}
-
-// 新增：手动同步到后端
-function syncToBackend() {
-    const stockCodes = stockData.map(stock => stock.StockCode);
-    fetch(`${BASE_URL}/api/update_stocks_pool`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codes: stockCodes, caller: 'custom_stock_dashboard' })
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        console.log('Synced to backend:', data.message || 'Success');
-        lastSyncedStockData = [...stockData];  // 更新上次同步数据
-        // 同时保存到文件（与 saveStockCodes 一致）
-        saveStockCodes();
-        return fetch(`${BASE_URL}/api/save_stock_codes`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stock_codes: stockCodes })
-        });
-    })
-    .then(response => response.json())
-    .then(data => console.log('Saved to backend:', data.message || 'Success'))
-    .catch(error => console.error('Sync failed:', error));
 }
 
 function updateTableHeaders() {
