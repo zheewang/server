@@ -1,4 +1,3 @@
-
 # Monkey patch 以支持 gevent 对 zmq 的非阻塞
 from gevent import monkey
 import gevent.lock
@@ -16,18 +15,25 @@ from datetime import datetime, time as dt_time
 import zmq
 from gevent.pool import Pool
 
-
 logger = app.logger
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 DATA_SOURCES = config['data_sources']
 
-# 验证配置，如 update_interval
-required_keys = ['tushare', 'mairui', 'selenium']
-for source in required_keys:
-    if source not in DATA_SOURCES or 'update_interval' not in DATA_SOURCES[source]:
+# 验证配置完整性
+required_keys = {
+    'tushare': ['token', 'update_interval', 'limits', 'batch_size'],
+    'mairui': ['main_url', 'backup_url', 'licence', 'update_interval', 'rate_limit', 'batch_size'],
+    'selenium': ['url_template', 'update_interval']
+}
+for source, keys in required_keys.items():
+    if source not in DATA_SOURCES:
         logger.error(f"Missing configuration for {source}")
         raise ValueError(f"Missing configuration for {source}")
+    for key in keys:
+        if key not in DATA_SOURCES[source]:
+            logger.error(f"Missing {key} in {source} configuration")
+            raise ValueError(f"Missing {key} in {source} configuration")
 
 ts.set_token(DATA_SOURCES['tushare']['token'])
 pro = ts.pro_api()
@@ -101,15 +107,19 @@ class DataAdapter:
 
 class RealtimeUpdater:
     def __init__(self):
-        self.stocks_pool = {}  # 使用普通字典
-        self.realtime_data = {}  # 使用普通字典
+        self.stocks_pool = {}
+        self.realtime_data = {}
         self.realtime_lock = gevent.lock.Semaphore()
         self.running = False
         self.source_tasks = {}
-        self.custom_stocks = []  # 添加默认空列表
-        self.zmq_context = zmq.Context()  # 单例上下文
-        self.zmq_socket = self.zmq_context.socket(zmq.REQ)
-        self.zmq_socket.connect("tcp://127.0.0.1:5555")
+        self.custom_stocks = []
+        self.zmq_context = zmq.Context()
+        self.pub_socket = self.zmq_context.socket(zmq.PUB)
+        self.pub_socket.connect("tcp://127.0.0.1:5556")
+        self.sub_socket = self.zmq_context.socket(zmq.SUB)
+        self.sub_socket.connect("tcp://127.0.0.1:5555")
+        self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.last_emitted_data = {}
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -119,48 +129,67 @@ class RealtimeUpdater:
         elif first_digit == 6:
             return '.SH'
         return ''
-    
 
     def fetch_selenium_async(self, stock_codes, caller):
         start_time = time.time()
-        socket = self.zmq_socket
-        batch_size = 10 #min(30, max(10, len(stock_codes) // 5))  # 动态批次大小 ,如果股票代码太多，就设置批次大小为 30
-        pool = Pool(1)  # 并发 3 个批次
+        total_stocks = len(stock_codes)
+        received_stocks = set()
+        done = False
+        timeout = max(15000, total_stocks * 500)  # 每股票 0.5 秒，最小 15 秒
+        retries = 2
 
-        def fetch_batch(batch_codes, batch_num, total_batches):
-            request = {"stocks": batch_codes}
-            retries = 1
-            for attempt in range(retries + 1):
+        for attempt in range(retries + 1):
+            self.pub_socket.send_json({"stocks": stock_codes})
+            logger.debug(f"[{caller}] Sent initial request (attempt {attempt + 1}/{retries + 1}) for {total_stocks} stocks to port 5556")
+            gevent.sleep(1)
+
+            while not done:
                 try:
-                    socket.send_json(request)
-                    timeout = 15000 #min(15000, max(8000, len(batch_codes) * 1000))  # 每只股票 1 秒，最小 8 秒，最大 15 秒
-                    if socket.poll(timeout):
-                        data = socket.recv_json()
-                        logger.debug(f"[{caller}] Gevent Selenium batch {batch_num}/{total_batches} received: {data}")
-                        with self.realtime_lock:
-                            self.realtime_data.update(data)
-                        with app.app_context():  # 显式添加上下文    
-                            try:
-                                socketio.emit('realtime_update', data, namespace='/stocks_realtime')
-                                logger.debug(f"[{caller}] emitted: {data}")
-                            except Exception as e:
-                                logger.error(f"[{caller}] Error emitting realtime_update: {e}")
-                        
-                        break  #不再attempt
+                    if self.sub_socket.poll(timeout):
+                        data = self.sub_socket.recv_json()
+                        if "done" in data and data["done"]:
+                            logger.debug(f"[{caller}] Received completion signal")
+                            done = True
+                        else:
+                            logger.debug(f"[{caller}] Received batch data: {data}")
+                            with self.realtime_lock:
+                                current_time = time.time()
+                                for code, info in data.items():
+                                    info['last_updated'] = current_time
+                                    self.realtime_data[code] = info
+                                    received_stocks.add(code)
+                            with app.app_context():
+                                self.emit_updates(data)
                     else:
-                        logger.warning(f"[{caller}] Timeout waiting for Selenium batch {batch_num}, attempt {attempt + 1}")
-                        if attempt == retries:
+                        logger.warning(f"[{caller}] Timeout waiting for batch data, received {len(received_stocks)}/{total_stocks} stocks")
+                        if attempt < retries:
+                            logger.info(f"[{caller}] Retrying request...")
                             break
+                        done = True
                 except Exception as e:
-                    logger.error(f"[{caller}] Error in Selenium batch {batch_num}: {e}")
+                    logger.error(f"[{caller}] Error receiving batch: {e}")
                     break
+            if len(received_stocks) == total_stocks:
+                break
 
-        batches = [stock_codes[i:i + batch_size] for i in range(0, len(stock_codes), batch_size)]
-        total_batches = len(batches)
-        pool.map(lambda idx: fetch_batch(batches[idx], idx + 1, total_batches), range(total_batches))
-        pool.join()
-        logger.info(f"[{caller}] Fetching {len(stock_codes)} stocks via Selenium took {time.time() - start_time:.2f} seconds")
+        missing_stocks = set(stock_codes) - received_stocks
+        if missing_stocks:
+            logger.warning(f"[{caller}] Missing data for stocks: {missing_stocks}")
+        logger.info(f"[{caller}] Fetching {total_stocks} stocks via Selenium took {time.time() - start_time:.2f} seconds, received {len(received_stocks)} stocks")
 
+    def emit_updates(self, new_data):
+        updates = {}
+        with self.realtime_lock:
+            for code, data in new_data.items():
+                if code not in self.last_emitted_data or self.last_emitted_data[code] != data:
+                    updates[code] = data
+            if updates:
+                try:
+                    socketio.emit('realtime_update', updates, namespace='/stocks_realtime')
+                    logger.debug(f"[global] Emitted updates: {updates}")
+                    self.last_emitted_data.update(updates)
+                except Exception as e:
+                    logger.error(f"[global] Error emitting updates: {e}")
 
     def get_realtime_data(self, stock_codes, source, caller='global'):
         with app.app_context():
@@ -170,13 +199,19 @@ class RealtimeUpdater:
                 logger.debug(f"[{caller}] Fetching {source} for {len(stock_codes)} stocks: {stock_codes}")
 
                 if source == 'selenium':
-                    gevent.spawn(self.fetch_selenium_async, stock_codes, caller)  # 异步执行
+                    current_time = time.time()
+                    expired_codes = [
+                        code for code in stock_codes
+                        if code not in self.realtime_data or
+                        (current_time - self.realtime_data[code].get('last_updated', 0) > 120)
+                    ]
+                    if expired_codes:
+                        gevent.spawn(self.fetch_selenium_async, expired_codes, caller)
                     with self.realtime_lock:
                         updated_data = {code: self.realtime_data.get(code, {}) for code in stock_codes}
-
-                    filted_data = {k: v for k, v in updated_data.items() if v} # 过滤掉值为空字典的股票代码               
-                    logger.debug(f"[global] 'selenium' get realtime data: {filted_data}")
-                    return filted_data
+                    filtered_data = {k: v for k, v in updated_data.items() if v}
+                    logger.debug(f"[{caller}] 'selenium' get realtime data: {filtered_data}")
+                    return filtered_data
 
                 elif source == 'tushare':
                     ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in stock_codes]
@@ -191,28 +226,34 @@ class RealtimeUpdater:
                 elif source == 'mairui':
                     codes_to_fetch = stock_codes
                     batch_size = DATA_SOURCES[source].get('batch_size', 10)
-                    for code in codes_to_fetch[:batch_size]:
-                        urls = [DATA_SOURCES[source]['main_url'], DATA_SOURCES[source]['backup_url']]
-                        success = False
-                        for url_template in urls:
-                            url = url_template.format(code=code, licence=DATA_SOURCES[source]['licence'])
-                            try:
-                                response = requests.get(url, timeout=5)
-                                response.raise_for_status()
-                                data = response.json()
-                                batch_data = DataAdapter.mairui_adapter(data, code)
-                                updated_data.update(batch_data)
-                                success = True
-                                break
-                            except requests.RequestException as e:
-                                logger.warning(f"[{caller}] Mairui request failed for {code}: {str(e)}")
-                        if not success:
-                            logger.error(f"[{caller}] Failed to fetch {code} from mairui")
-                        gevent.sleep(DATA_SOURCES[source]['rate_limit'])
-                
+                    for i in range(0, len(codes_to_fetch), batch_size):  # 分批处理所有代码
+                        batch = codes_to_fetch[i:i + batch_size]
+                        for code in batch:
+                            urls = [DATA_SOURCES[source]['main_url'], DATA_SOURCES[source]['backup_url']]
+                            success = False
+                            for url_template in urls:
+                                url = url_template.format(code=code, licence=DATA_SOURCES[source]['licence'])
+                                try:
+                                    response = requests.get(url, timeout=5)
+                                    response.raise_for_status()
+                                    data = response.json()
+                                    batch_data = DataAdapter.mairui_adapter(data, code)
+                                    updated_data.update(batch_data)
+                                    success = True
+                                    break
+                                except requests.RequestException as e:
+                                    logger.warning(f"[{caller}] Mairui request failed for {code} with {url}: {str(e)}")
+                            if not success:
+                                logger.error(f"[{caller}] Failed to fetch {code} from mairui after trying all URLs")
+                            gevent.sleep(DATA_SOURCES[source]['rate_limit'])  # 每请求一个股票后休眠
+
                 if updated_data:
                     with self.realtime_lock:
-                        self.realtime_data.update(updated_data)
+                        current_time = time.time()
+                        for code, data in updated_data.items():
+                            data['last_updated'] = current_time
+                            self.realtime_data[code] = data
+                    self.emit_updates(updated_data)
                 logger.debug(f"[{caller}] {source} returned {len(updated_data)} stocks: {updated_data}")
                 return updated_data
             except Exception as e:
@@ -221,6 +262,7 @@ class RealtimeUpdater:
 
     def pool_update_task(self):
         logger.info("[global] Starting pool update task")
+        print("Starting pool update task")
         while self.running:
             try:
                 updated = False
@@ -230,6 +272,7 @@ class RealtimeUpdater:
                         caller = new_stocks.get('caller', 'unknown')
                         codes = new_stocks.get('codes', [])
                         logger.debug(f"[global] Retrieved from queue: {codes} from {caller}")
+                        print(f"Updated stocks from {caller}: {codes}")
                         current_time = time.time()
                         with self.realtime_lock:
                             for code in codes:
@@ -243,7 +286,7 @@ class RealtimeUpdater:
                     except gevent.queue.Empty:
                         break
 
-                # stocks_pool里面的stocks，如果超过两小时，还没有接到前端来的更新要求，将从池子里删去。      
+                # stocks_pool里面的stocks，如果超过两小时，还没有接到前端来的更新要求，将从池子里删去。
                 with self.realtime_lock:
                     expired = [code for code, info in self.stocks_pool.items() 
                               if time.time() - info['last_updated'] > 7200]
@@ -253,6 +296,7 @@ class RealtimeUpdater:
                             del self.realtime_data[code]
                     if expired:
                         logger.debug(f"[global] Removed expired stocks: {expired}")
+                        print(f"Removed expired stocks: {expired}")
                 gevent.sleep(5)
             except Exception as e:
                 logger.error(f"[global] Error in pool update task: {str(e)}", exc_info=True)
@@ -260,15 +304,16 @@ class RealtimeUpdater:
 
     def data_update_task(self, source):
         logger.info(f"[global] Starting {source} data update task")
+        print(f"Starting {source} data update task")
         while self.running:
             try:
                 with self.realtime_lock:
                     self.custom_stocks = [key for key, value in self.stocks_pool.items() if 'custom_stock' in value['sources']]
                     if source == 'mairui':
-                        local_stock_codes = [code for code in self.stocks_pool.keys() if code in self.custom_stocks]
+                        local_stock_codes = [code for code in self.stocks_pool.keys()  if code in self.custom_stocks]
                     elif source == 'tushare':
                         local_stock_codes = [code for code in self.stocks_pool.keys() if code not in self.custom_stocks]
-                    elif source == 'selenium': # for selenium
+                    elif source == 'selenium':
                         local_stock_codes = [code for code in self.stocks_pool.keys() if code not in self.custom_stocks]
                     else:
                         logger.error(f"[global] Error source {source} ")
@@ -279,29 +324,24 @@ class RealtimeUpdater:
 
                 if local_stock_codes:
                     with app.app_context():
-                        # 只更新超过 60 秒未更新的股票
-                        expired_codes = [code for code in local_stock_codes if code not in self.realtime_data or 
-                                        (time.time() - self.realtime_data[code].get('last_updated', 0) > 60)]
-                        if expired_codes:
-                            logger.debug(f"[global] {source} updating {len(expired_codes)} expired stocks")
-                            updated_data = self.get_realtime_data(expired_codes, source, caller=f'{source}_task')
-                            if updated_data:
-                                with self.realtime_lock:
-                                    for code, data in updated_data.items():
-                                        data['last_updated'] = time.time()
-                                        self.realtime_data[code] = data
-                                try:
-                                    socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
-                                    logger.debug(f"[global] {source} emitted: {updated_data}")
-                                except Exception as e:
-                                    logger.error(f"[global] Error emitting realtime_update: {e}")
-
+                        if source == 'selenium':
+                            self.get_realtime_data(local_stock_codes, source, caller=f'{source}_task')
                         else:
-                            logger.debug(f"[global] No expired stocks to update for {source}")
+                            expired_codes = [code for code in local_stock_codes if code not in self.realtime_data or 
+                                            (time.time() - self.realtime_data[code].get('last_updated', 0) > 60)]
+                            if expired_codes:
+                                logger.debug(f"[global] {source} updating {len(expired_codes)} expired stocks")
+                                updated_data = self.get_realtime_data(expired_codes, source, caller=f'{source}_task')
+                                if updated_data:
+                                    with self.realtime_lock:
+                                        for code, data in updated_data.items():
+                                            data['last_updated'] = time.time()
+                                            self.realtime_data[code] = data
+                                    self.emit_updates(updated_data)
 
                 in_trading_time = is_trading_time()
                 sleep_time = DATA_SOURCES[source]['update_interval']['non_trading_time'] if not in_trading_time else DATA_SOURCES[source]['update_interval']['trading_time']
-
+                
                 '''
                 from blueprints.common import is_tradingday
                 is_trading_day_flag = is_tradingday(datetime.now().date())
@@ -316,7 +356,7 @@ class RealtimeUpdater:
                         gevent.sleep(time_diff)
                 else:
                     gevent.sleep(sleep_time)
-                '''
+                '''                
                 gevent.sleep(sleep_time)
             except Exception as e:
                 logger.error(f"[global] Error in {source} data update task: {str(e)}", exc_info=True)
@@ -328,20 +368,23 @@ class RealtimeUpdater:
             with app.app_context():
                 self.sync_latest_stocks()
                 logger.debug(f"[global] Initial stocks_pool: {self.stocks_pool}")
-                
+                print(f"Initial stocks pool synced with {len(self.stocks_pool)} stocks")
+            
             self.running = True
             socketio.start_background_task(self.pool_update_task)
-            #self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
             self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
             self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
             logger.info("[global] Realtime updater started with multi-source tasks")
+            print("Realtime updater started with mairui and selenium tasks")
             gevent.sleep(1)
 
     def stop(self):
         self.running = False
-        self.zmq_socket.close()  # 关闭 socket
-        self.zmq_context.term()  # 终止上下文
+        self.sub_socket.close()
+        self.pub_socket.close()
+        self.zmq_context.term()
         logger.info("[global] Realtime updater stopped")
+        print("Realtime updater stopped")
 
     def sync_latest_stocks(self):
         with app.app_context():

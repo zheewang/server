@@ -21,7 +21,22 @@ let hiddenStocks = new Set(JSON.parse(sessionStorage.getItem('hiddenStocks') || 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'limitup_unfilled_orders_dashboard';
 
-// 直接关闭log的简单粗暴方法
+// 节流函数
+function throttle(fn, delay) {
+    let lastCall = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastCall >= delay) {
+            fn(...args);
+            lastCall = now;
+        }
+    };
+}
+
+// 创建节流版本的 saveState，每秒最多保存一次
+const throttledSaveState = throttle(saveState, 5000);
+
+// 直接关闭log的简单粗暴方法（可选）
 // console.log = function() {};
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -51,9 +66,11 @@ document.addEventListener('DOMContentLoaded', function() {
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
 
     // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
+    // 注册实时更新处理，使用节流保存
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
+        throttledSaveState(); // 使用节流版本保存状态
     });
 
     // 修正排序逻辑，直接渲染排序后的 filteredData

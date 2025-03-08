@@ -20,6 +20,25 @@ let deletedStocks = new Set();
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'custom_stock_dashboard';
 
+
+// 节流函数
+function throttle(fn, delay) {
+    let lastCall = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastCall >= delay) {
+            fn(...args);
+            lastCall = now;
+        }
+    };
+}
+
+// 创建节流版本的 saveState，每秒最多保存一次
+const throttledSaveState = throttle(saveState, 5000);
+
+// 直接关闭log的简单粗暴方法（可选）
+// console.log = function() {};
+
 document.addEventListener('DOMContentLoaded', function() {
     const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
@@ -50,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateData(data, stockData, 'StockCode');
         updatePagination(pagination, stockData.length);
         renderTable();
-        saveState();
+        throttledSaveState();
     });
 
     document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件

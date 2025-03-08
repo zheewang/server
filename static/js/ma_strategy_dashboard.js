@@ -21,6 +21,24 @@ let recentDates = [];
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'ma_strategy_dashboard';
 
+// 节流函数
+function throttle(fn, delay) {
+    let lastCall = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastCall >= delay) {
+            fn(...args);
+            lastCall = now;
+        }
+    };
+}
+
+// 创建节流版本的 saveState，每秒最多保存一次
+const throttledSaveState = throttle(saveState, 5000);
+
+// 直接关闭log的简单粗暴方法（可选）
+// console.log = function() {};
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, registering handler');
     // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
@@ -29,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateData(data, stockData, 'StockCode');
         applyFilters();
         renderTable();
-        saveState();
+        throttledSaveState();
     });
 
     makeTableSortable();
