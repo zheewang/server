@@ -13,7 +13,8 @@ logging.basicConfig(
     level=logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     filename='C:\\WebApp\\server\\selenium_app.log',
-    filemode='a'
+    filemode='a',
+    encoding='utf-8'  # 强制 UTF-8 编码
 )
 
 logger = logging.getLogger(__name__)
