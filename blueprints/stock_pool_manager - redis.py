@@ -83,12 +83,11 @@ class RealtimeUpdater:
         self.running = False
         self.source_tasks = {}
         self.custom_stocks = []
-        self.redis_client = redis.Redis(
-            host=REDIS_CONFIG['host'],
-            port=REDIS_CONFIG['port'],
-            db=REDIS_CONFIG['db']
-        )
         self.last_emitted_data = {}
+        self.redis_client = redis.Redis(
+            connection_pool=redis.ConnectionPool(host=REDIS_CONFIG['host'], 
+                                                 port=REDIS_CONFIG['port'], 
+                                                 db=REDIS_CONFIG['db']))
 
     def get_stock_suffix(self, stock_code):
         first_char = stock_code[0]
@@ -122,26 +121,21 @@ class RealtimeUpdater:
 
                 if source == 'selenium':
                     current_time = time.time()
-                    expired_codes = [
-                        code for code in stock_codes
-                        if code not in self.realtime_data or
-                        (current_time - self.realtime_data[code].get('last_updated', 0) > 120)
-                    ]
+                    expired_codes = [code for code in stock_codes if code not in self.realtime_data or (current_time - self.realtime_data[code].get('last_updated', 0) > 120)]
                     if expired_codes:
                         task = {
                             "task_id": str(uuid.uuid4()),
                             "stocks": expired_codes,
                             "timestamp": datetime.now().isoformat(),
-                            "priority": 1
+                            "priority": 2 if caller == "custom_stock" else 1  # 示例：custom_stock 高优先级
                         }
-                        self.redis_client.lpush(REDIS_CONFIG['tasks_queue'], json.dumps(task))
-                        self.redis_client.hset("pending_tasks", task["task_id"], json.dumps(task))  # 记录待处理任务
-                        logger.debug(f"[{caller}] Pushed task to queue: {task}")
+                        queue_name = REDIS_CONFIG['tasks_queue_high'] if task["priority"] > 1 else REDIS_CONFIG['tasks_queue_low']
+                        self.redis_client.lpush(queue_name, json.dumps(task))
+                        self.redis_client.hset("pending_tasks", task["task_id"], json.dumps(task))
+                        logger.debug(f"[{caller}] Pushed task to {queue_name}: {task}")
                     with self.realtime_lock:
                         updated_data = {code: self.realtime_data.get(code, {}) for code in stock_codes}
-                    filtered_data = {k: v for k, v in updated_data.items() if v}
-                    logger.debug(f"[{caller}] 'selenium' get realtime data: {filtered_data}")
-                    return filtered_data
+                    return {k: v for k, v in updated_data.items() if v}
 
                 elif source == 'tushare':
                     ts_codes = [f"{code}{self.get_stock_suffix(code)}" for code in stock_codes]
@@ -189,7 +183,7 @@ class RealtimeUpdater:
             except Exception as e:
                 logger.error(f"[{caller}] Error fetching {source} data: {str(e)}", exc_info=True)
                 return {}
-
+    
     def pool_update_task(self):
         logger.info("[global] Starting pool update task")
         print("Starting pool update task")
@@ -240,9 +234,10 @@ class RealtimeUpdater:
             task_time = parse(task["timestamp"])
             if (current_time - task_time).total_seconds() > 300:  # 5 分钟超时
                 logger.warning(f"Task {task_id} timed out, requeueing...")
-                task["timestamp"] = current_time.isoformat()  # 更新时间戳
-                self.redis_client.lpush(REDIS_CONFIG['tasks_queue'], json.dumps(task))
-                self.redis_client.hset("pending_tasks", task_id, json.dumps(task))  # 更新时间戳
+                task["timestamp"] = current_time.isoformat() # 更新时间戳
+                queue_name = REDIS_CONFIG['tasks_queue_high'] if task["priority"] > 1 else REDIS_CONFIG['tasks_queue_low']
+                self.redis_client.lpush(queue_name, json.dumps(task))
+                self.redis_client.hset("pending_tasks", task_id, json.dumps(task)) # 更新时间戳
                 logger.debug(f"Requeued task: {task}")
 
     def data_update_task(self, source):
@@ -269,11 +264,9 @@ class RealtimeUpdater:
                     with app.app_context():
                         if source == 'selenium':
                             self.get_realtime_data(local_stock_codes, source, caller=f'{source}_task')
-                            # 处理结果队列
                             result = self.redis_client.rpop(REDIS_CONFIG['results_queue'])
                             if result:
                                 result_data = json.loads(result.decode('utf-8') if isinstance(result, bytes) else result)
-                                logger.debug(f"[global] Received result: {result_data}")
                                 if result_data["status"] == "success":
                                     with self.realtime_lock:
                                         current_time = time.time()
@@ -281,8 +274,8 @@ class RealtimeUpdater:
                                             info['last_updated'] = current_time
                                             self.realtime_data[code] = info
                                     self.emit_updates(result_data["data"])
-                                elif result_data["status"] == "failed":
-                                    logger.warning(f"[global] Task {result_data['task_id']} failed")
+                                else:
+                                    logger.warning(f"Task {result_data['task_id']} failed")
                             # 检查超时任务
                             self.check_pending_tasks()
                         else:
