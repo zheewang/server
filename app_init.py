@@ -11,7 +11,7 @@ import logging
 
 # 配置全局日志
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     filename='C:\\WebApp\\server\\app.log',
     filemode='a'

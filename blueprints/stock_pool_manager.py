@@ -223,7 +223,7 @@ class RealtimeUpdater:
                     expired_codes = [
                         code for code in stock_codes
                         if code not in self.realtime_data or
-                        (current_time - self.realtime_data[code].get('last_updated', 0) > 120)
+                        (current_time - self.realtime_data[code].get('last_updated', 0) > 300)
                     ]
                     if expired_codes:
                         gevent.spawn(self.fetch_selenium_async, expired_codes, caller)
@@ -348,7 +348,7 @@ class RealtimeUpdater:
                             self.get_realtime_data(local_stock_codes, source, caller=f'{source}_task')
                         else:
                             expired_codes = [code for code in local_stock_codes if code not in self.realtime_data or 
-                                            (time.time() - self.realtime_data[code].get('last_updated', 0) > 60)]
+                                            (time.time() - self.realtime_data[code].get('last_updated', 0) > 300)]
                             if expired_codes:
                                 logger.debug(f"[global] {source} updating {len(expired_codes)} expired stocks")
                                 updated_data = self.get_realtime_data(expired_codes, source, caller=f'{source}_task')
@@ -391,7 +391,7 @@ class RealtimeUpdater:
             self.running = True
             socketio.start_background_task(self.pool_update_task)
             self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
-            self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
+            #self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
             self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
             logger.info("[global] Realtime updater started with multi-source tasks")
             print("Realtime updater started with mairui ,tushare,and selenium tasks")
