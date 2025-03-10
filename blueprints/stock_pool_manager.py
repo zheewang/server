@@ -52,6 +52,24 @@ def is_trading_time():
     afternoon_end = dt_time(15, 0)
     return (morning_start <= current_time <= morning_end) or (afternoon_start <= current_time <= afternoon_end)
 
+def get_target_time(current_time):
+    morning_start = dt_time(9, 10)
+    morning_end = dt_time(11, 30)
+    afternoon_start = dt_time(13, 0)
+    
+    if current_time < morning_start:
+        return dt_time(9, 10)
+    elif morning_end < current_time < afternoon_start:
+        return dt_time(13, 0)
+    return None
+
+def sleep_until_target(target_time):
+    now = datetime.now()
+    time_diff = (now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0) - now).total_seconds()
+    if time_diff > 0:
+        gevent.sleep(time_diff)
+
+
 def get_stock_prefix(stock_code):
     first_char = stock_code[0]
     first_digit = int(first_char)
@@ -344,22 +362,20 @@ class RealtimeUpdater:
                 in_trading_time = is_trading_time()
                 sleep_time = DATA_SOURCES[source]['update_interval']['non_trading_time'] if not in_trading_time else DATA_SOURCES[source]['update_interval']['trading_time']
                 
-                '''
+                # 交易日，盘前时间特别处理
                 from blueprints.common import is_tradingday
                 is_trading_day_flag = is_tradingday(datetime.now().date())
-                current_time = datetime.now().time()
-                morning_start = dt_time(9, 10)
-
-                if is_trading_day_flag and current_time < morning_start:
-                    now = datetime.now()
-                    target_time = now.replace(hour=9, minute=10, second=0, microsecond=0) #如果当前时间早于 9:10，gevent.sleep(time_diff) 执行
-                    if now < target_time:
-                        time_diff = (target_time - now).total_seconds()
-                        gevent.sleep(time_diff)
+                if is_trading_day_flag:
+                    current_time = datetime.now().time()
+                    target_time = get_target_time(current_time)
+                    
+                    if target_time:
+                        sleep_until_target(target_time)
+                    else:
+                        gevent.sleep(sleep_time)
                 else:
                     gevent.sleep(sleep_time)
-                '''                
-                gevent.sleep(sleep_time)
+                              
             except Exception as e:
                 logger.error(f"[global] Error in {source} data update task: {str(e)}", exc_info=True)
                 gevent.sleep(60)
@@ -376,8 +392,9 @@ class RealtimeUpdater:
             socketio.start_background_task(self.pool_update_task)
             self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
             self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
+            self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
             logger.info("[global] Realtime updater started with multi-source tasks")
-            print("Realtime updater started with mairui and selenium tasks")
+            print("Realtime updater started with mairui ,tushare,and selenium tasks")
             gevent.sleep(1)
 
     def stop(self):

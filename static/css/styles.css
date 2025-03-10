@@ -154,7 +154,7 @@ input#perPage {
 }
 
 .table-container {
-    background: white;
+    background: rgb(252, 250, 250);
     border-radius: 10px;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
     padding: 20px;
@@ -213,7 +213,7 @@ tr {
 }
 
 tr:nth-child(even) {
-    background-color: #f9f9f9;
+    background-color: #f1eded;
 }
 
 tr:hover {

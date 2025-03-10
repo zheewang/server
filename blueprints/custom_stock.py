@@ -43,6 +43,7 @@ def read_stock_codes(file_path='stocks.txt'):
 def write_stock_codes(stock_codes_to_write, file_path='stocks.txt'):
     global stock_codes
     try:
+        stock_codes_to_write=list(set(stock_codes_to_write)) # 去重
         with open(file_path, 'w') as f:
             for code in stock_codes_to_write:
                 f.write(f"{code}\n")
