@@ -244,7 +244,12 @@ class RealtimeUpdater:
                         gevent.sleep(60 / DATA_SOURCES[source]['limits']['per_minute'])
 
                 elif source == 'mairui':
-                    codes_to_fetch = stock_codes
+                    # 对于 refresh_request，强制更新所选股票，忽略缓存
+                    codes_to_fetch = stock_codes if caller == 'refresh_request' else [
+                        code for code in stock_codes
+                        if code not in self.realtime_data or
+                        (time.time() - self.realtime_data[code].get('last_updated', 0) > 300)
+                    ]
                     batch_size = DATA_SOURCES[source].get('batch_size', 10)
                     for i in range(0, len(codes_to_fetch), batch_size):  # 分批处理所有代码
                         batch = codes_to_fetch[i:i + batch_size]

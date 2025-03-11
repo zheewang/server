@@ -50,6 +50,45 @@ def init_socketio(socketio):
     def handle_disconnect():
         logger.debug("Client disconnected from /stocks_realtime namespace")
 
+    from blueprints.stock_pool_manager import global_updater
+
+    # 处理前端刷新请求，添加默认参数
+    @socketio.on('refresh_realtime_data', namespace='/stocks_realtime')
+    def handle_refresh_request(data=None):
+        dashboards = data.get('dashboards', ['all']) if data else ['all']
+        app.logger.debug(f"Received refresh_realtime_data request for dashboards: {dashboards}")
+        
+        # 映射 dashboard 到 stocks_pool 的 sources
+        source_mapping = {
+            'stock_dashboard': None,  # 默认所有股票
+            'ma_strategy_dashboard': 'ma_strategy',
+            'custom_stock_dashboard': 'custom_stock',
+            'limitup_unfilled_orders_dashboard': 'limitup_unfilled_orders'
+        }
+        
+        if 'all' in dashboards:
+            stock_codes = list(global_updater.stocks_pool.keys())
+        else:
+            stock_codes = set()
+            with global_updater.realtime_lock:
+                for dashboard in dashboards:
+                    source = source_mapping.get(dashboard)
+                    if source:
+                        stock_codes.update(
+                            code for code, info in global_updater.stocks_pool.items()
+                            if source in info['sources']
+                        )
+                    else:  # stock_dashboard 包含所有股票
+                        stock_codes.update(global_updater.stocks_pool.keys())
+        
+        if stock_codes:
+            updated_data = global_updater.get_realtime_data(list(stock_codes), source='mairui', caller='refresh_request')
+            if updated_data:
+                socketio.emit('realtime_update', updated_data, namespace='/stocks_realtime')
+                app.logger.debug(f"Emitted refreshed realtime data for {len(updated_data)} stocks")
+        else:
+            app.logger.warning("No stocks selected for refresh")
+
 init_socketio(socketio)  # 初始化SocketIO,绑定到特点的事件命名空间
 
 

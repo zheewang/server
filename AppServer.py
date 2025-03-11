@@ -43,8 +43,6 @@ def limitup_unfilled_orders_dashboard():
     return render_template('limitup_unfilled_orders_dashboard.html')
 
 
-
-from blueprints.stock_pool_manager import global_updater
 if __name__ == '__main__':
     with app.app_context():
         global_updater.sync_latest_stocks()  # 初始同步
