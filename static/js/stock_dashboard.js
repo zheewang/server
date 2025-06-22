@@ -12,7 +12,7 @@ import {
 
 let pagination = initPagination();
 let stockData = [];
-let filteredData = [];  // 新增
+let filteredData = [];
 let sortRules = [];
 let recentDates = [];
 let sectors = [];
@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 pagination.currentPage = savedState.currentPage || 1;
                 pagination.perPage = savedState.perPage || 30;
                 stockData = savedState.stockData || [];
-                filteredData = stockData;  // 初始化 filteredData
+                filteredData = savedState.filteredData || [...stockData]; // 明确初始化
                 sortRules = savedState.sortRules || [];
                 document.getElementById('perPage').value = pagination.perPage;
                 document.getElementById('date').value = savedState.date || '';
@@ -63,21 +63,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     renderTable();
                 }
             }
+
+            // 延迟绑定排序事件
+            setTimeout(() => {
+                makeTableSortable();
+                bindSortEvents(filteredData, sortRules, renderTable, saveState);
+                console.log('Sorting events bound');
+            }, 0);
         })
         .catch(error => {
             console.error('Error fetching sectors:', error);
         });
 
-    makeTableSortable();
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
-    bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
-    // 绑定 Fetch Data 按钮事件
     document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
-
     document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
     document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
-    document.getElementById('search')?.addEventListener('input', applyFilters);  // 添加搜索事件
+    document.getElementById('search')?.addEventListener('input', applyFilters);
 
     document.getElementById('th_sector_index').addEventListener('change', function() {
         const selectedTHS = this.value;
@@ -127,7 +130,7 @@ function fetchData() {
         return;
     }
 
-    const url = `${BASE_URL}/api/stock_data?date=${date}&sector_code=${sectorCode}`; // 修正 typo
+    const url = `${BASE_URL}/api/stock_data?date=${date}&sector_code=${sectorCode}`;
     console.log('Fetching data with URL:', url);
 
     fetch(url)
@@ -138,21 +141,26 @@ function fetchData() {
             return response.json();
         })
         .then(data => {
-            console.log('Fetched data:', data);
             if (!Array.isArray(data)) {
                 throw new Error('Expected an array but received: ' + JSON.stringify(data));
             }
 
             stockData = data;
-            updateTableHeaders();
             filteredData = [...stockData];
+            updateTableHeaders();
             updatePagination(pagination, filteredData.length);
             renderTable();
             saveState();
+            // 重新绑定排序事件
+            setTimeout(() => {
+                makeTableSortable();
+                bindSortEvents(filteredData, sortRules, renderTable, saveState);
+            }, 0);
         })
         .catch(error => {
             console.error('Error fetching data:', error);
             stockData = [];
+            filteredData = [];
             renderTable();
             saveState();
         });
@@ -172,7 +180,10 @@ function updateTableHeaders() {
             th.dataset.text = date;
             thead.appendChild(th);
         });
-        bindSortEvents(stockData, sortRules, renderTable, saveState);
+        // 重新绑定排序事件
+        setTimeout(() => {
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);
+        }, 0);
     } else {
         const thead = document.getElementById('tableHeader').querySelector('tr');
         while (thead.children.length > 8) {
@@ -181,7 +192,7 @@ function updateTableHeaders() {
     }
 }
 
-function applyFilters() {  // 新增
+function applyFilters() {
     const searchValue = document.getElementById('search').value.toLowerCase();
     filteredData = stockData.filter(stock =>
         stock.StockCode.toLowerCase().includes(searchValue) ||
@@ -190,14 +201,23 @@ function applyFilters() {  // 新增
     updatePagination(pagination, filteredData.length);
     renderTable();
     saveState();
+    // 重新绑定排序事件
+    setTimeout(() => {
+        makeTableSortable();
+        bindSortEvents(filteredData, sortRules, renderTable, saveState);
+    }, 0);
 }
 
 function renderTable() {
     const tbody = document.querySelector('#stockTable tbody');
+    if (!tbody) {
+        console.error('tbody not found in DOM');
+        return;
+    }
     tbody.innerHTML = '';
 
     const start = (pagination.currentPage - 1) * pagination.perPage;
-    const end = Math.min(start + pagination.perPage, filteredData.length);  // 使用 filteredData
+    const end = Math.min(start + pagination.perPage, filteredData.length);
     const pageData = filteredData.slice(start, end);
 
     pageData.forEach((stock, rowIndex) => {
@@ -209,11 +229,11 @@ function renderTable() {
         let rowHTML = `
             <td>${stock.StockCode}</td>
             <td>${stock.StockName}</td>
-            <td class="${parseFloat(stock.PopularityRank) < 300 ? 'highlight-red' : ''}">${stock.PopularityRank || 'N/A'}</td>
-            <td>${stock.TurnoverAmount || 'N/A'}</td>
-            <td class="${parseFloat(stock.TurnoverRank) < 300 ? 'highlight-red' : ''}">${stock.TurnoverRank || 'N/A'}</td>
-            <td>${stock.LatestLimitUpDate || 'N/A'}</td>
-            <td>${stock.ReasonCategory || 'N/A'}</td>
+            <td class="${parseFloat(stock.PopularityRank) < 300 ? 'highlight-red' : ''}">${stock.PopularityRank ?? 'N/A'}</td>
+            <td>${stock.TurnoverAmount ?? 'N/A'}</td>
+            <td class="${parseFloat(stock.TurnoverRank) < 300 ? 'highlight-red' : ''}">${stock.TurnoverRank ?? 'N/A'}</td>
+            <td>${stock.LatestLimitUpDate ?? 'N/A'}</td>
+            <td>${stock.ReasonCategory ?? 'N/A'}</td>
             <td class="candlestick-cell">
                 ${hasRecentData ? `
                     <canvas id="${threeDayCanvasId}" width="100" height="60"></canvas>
@@ -260,33 +280,24 @@ function renderTable() {
             const threeDayCanvas = document.getElementById(threeDayCanvasId);
             if (threeDayCanvas) {
                 createCandlestickChart(threeDayCanvasId, stock.recent_data.slice(0, 3), true);
-            } else {
-                console.error(`Three-day canvas ${threeDayCanvasId} not found`);
             }
-
             const threeDayTooltipCanvas = document.getElementById(threeDayTooltipCanvasId);
             if (threeDayTooltipCanvas) {
                 createCandlestickChart(threeDayTooltipCanvasId, stock.recent_data.slice(0, 3), false);
-            } else {
-                console.error(`Three-day tooltip canvas ${threeDayTooltipCanvasId} not found`);
             }
-
             for (let i = 0; i < 3 && i < stock.recent_data.length; i++) {
                 const data = stock.recent_data[i];
                 const canvasId = `chart-${rowIndex}-${i}`;
                 const canvas = document.getElementById(canvasId);
                 if (canvas) {
                     createCandlestickChart(canvasId, [data], false);
-                } else {
-                    console.error(`Canvas ${canvasId} not found`);
                 }
             }
         }
     });
 
     renderPagination(pagination);
-    
-    // 添加行数统计
+
     const tableContainer = document.querySelector('.table-container');
     let rowCount = tableContainer.querySelector('.row-count');
     if (!rowCount) {
@@ -295,9 +306,13 @@ function renderTable() {
         rowCount.style.cssText = 'text-align: right; padding: 5px; font-size: 14px; color: #666;';
         tableContainer.insertBefore(rowCount, tableContainer.firstChild);
     }
-    rowCount.textContent = `Rows: ${filteredData.length}`;  // 使用 filteredData
+    rowCount.textContent = `Rows: ${filteredData.length}`;
 
-    bindSortEvents(stockData, sortRules, renderTable, saveState);
+    // 重新绑定排序事件
+    setTimeout(() => {
+        makeTableSortable();
+        bindSortEvents(filteredData, sortRules, renderTable, saveState);
+    }, 0);
 }
 
 function saveState() {
@@ -305,7 +320,7 @@ function saveState() {
         currentPage: pagination.currentPage,
         perPage: pagination.perPage,
         stockData,
-        filteredData,  // 保存 filteredData
+        filteredData,
         sortRules,
         date: document.getElementById('date').value,
         thSectorIndex: document.getElementById('th_sector_index').value,

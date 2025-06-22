@@ -21,7 +21,6 @@ let hiddenStocks = new Set(JSON.parse(sessionStorage.getItem('hiddenStocks') || 
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'limitup_unfilled_orders_dashboard';
 
-// 节流函数
 function throttle(fn, delay) {
     let lastCall = 0;
     return function (...args) {
@@ -33,22 +32,15 @@ function throttle(fn, delay) {
     };
 }
 
-// 创建节流版本的 saveState，每秒最多保存一次
 const throttledSaveState = throttle(saveState, 5000);
 
-// 直接关闭log的简单粗暴方法（可选）
-// console.log = function() {};
-
 document.addEventListener('DOMContentLoaded', function() {
-    makeTableSortable();
-    updateShowAllHiddenButton();
-
     const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
         stockData = savedState.stockData || [];
-        filteredData = savedState.filteredData || [];
+        filteredData = savedState.filteredData || [...stockData]; // 确保初始化
         sortRules = savedState.sortRules || [];
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('date').value = savedState.date || '';
@@ -61,25 +53,25 @@ document.addEventListener('DOMContentLoaded', function() {
             applyFilters();
             renderTable();
         }
+    } else {
+        fetchData();
     }
+
+    // 延迟绑定排序事件，确保 DOM 和数据就绪
+    setTimeout(() => {
+        makeTableSortable();
+        bindSortEvents(filteredData, sortRules, renderTable, saveState);
+        console.log('Sorting events bound');
+    }, 0);
 
     bindPerPageInput(pagination, filteredData, renderTable, saveState);
 
-    // 注册实时更新处理, 用于更新股票数据,第一个参数实际上不是命名空间，而是特定的event名称
-    // 注册实时更新处理，使用节流保存
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
-        throttledSaveState(); // 使用节流版本保存状态
+        renderTable(); // 明确调用 renderTable
+        throttledSaveState();
     });
-
-    // 修正排序逻辑，直接渲染排序后的 filteredData
-    bindSortEvents(filteredData, sortRules, () => {
-        console.log('After sorting, filteredData length:', filteredData.length);
-        updateSortIndicators(sortRules);
-        renderTable();
-        saveState();
-    }, saveState);
 
     document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
     document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
@@ -88,23 +80,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const fetchDataBtn = document.getElementById('fetchDataBtn');
     if (fetchDataBtn) {
-        console.log('fetchDataBtn found, binding click event');
-        fetchDataBtn.addEventListener('click', function() {
-            fetchData();
-        });
-    } else {
-        console.error('fetchDataBtn not found in DOM');
+        fetchDataBtn.addEventListener('click', fetchData);
     }
 
     const showAllHiddenBtn = document.getElementById('showAllHiddenBtn');
     if (showAllHiddenBtn) {
-        console.log('showAllHiddenBtn found, binding click event');
-        showAllHiddenBtn.addEventListener('click', function() {
-            console.log('Show All Hidden button clicked');
-            showAllHidden();
-        });
-    } else {
-        console.error('showAllHiddenBtn not found in DOM');
+        showAllHiddenBtn.addEventListener('click', showAllHidden);
     }
 });
 
@@ -130,18 +111,21 @@ function fetchData() {
             return response.json();
         })
         .then(data => {
-            // console.log('Fetched data:', data);
             if (data.message || data.length === 0) {
                 stockData = [];
                 filteredData = [];
             } else {
                 stockData = data;
-                filteredData = [...stockData];
+                filteredData = [...stockData]; // 明确初始化
             }
-            // console.log('Updated stockData length:', stockData.length);
             populateStreakFilter();
             applyFilters();
             saveState();
+            // 重新绑定排序事件
+            setTimeout(() => {
+                makeTableSortable();
+                bindSortEvents(filteredData, sortRules, renderTable, saveState);
+            }, 0);
         })
         .catch(error => {
             console.error('Error fetching data:', error);
@@ -179,14 +163,11 @@ function populateStreakFilter() {
     });
 
     streakFilter.value = currentValue && streakFilter.querySelector(`option[value="${currentValue}"]`) ? currentValue : 'All';
-    console.log('Streak filter populated, current value:', streakFilter.value);
 }
 
 function applyFilters() {
     const searchValue = document.getElementById('search').value.toLowerCase();
     const streakFilter = document.getElementById('streakFilter').value;
-
-    console.log('Applying filters - Search:', searchValue, 'Streak:', streakFilter);
 
     filteredData = stockData.filter(stock => {
         const searchMatch = !hiddenStocks.has(stock.StockCode) &&
@@ -209,14 +190,12 @@ function applyFilters() {
         return searchMatch && streakMatch;
     });
 
-    // 保留 pinned 和 unpinned 的顺序，但依赖 sortData 的结果
     const pinned = filteredData.filter(stock => pinnedStocks.has(stock.StockCode));
     const unpinned = filteredData.filter(stock => !pinnedStocks.has(stock.StockCode));
     filteredData = [...pinned, ...unpinned];
 
     updatePagination(pagination, filteredData.length);
     renderTable();
-    console.log('Filtered data length after applyFilters:', filteredData.length);
 }
 
 function togglePin(stockCode) {
@@ -252,9 +231,6 @@ function updateShowAllHiddenButton() {
     if (btn) {
         btn.textContent = `Show All Hidden (${hiddenStocks.size})`;
         btn.disabled = hiddenStocks.size === 0;
-        console.log('Updated Show All Hidden button: size=', hiddenStocks.size, 'disabled=', btn.disabled);
-    } else {
-        console.error('showAllHiddenBtn not found in DOM');
     }
 }
 
@@ -270,15 +246,13 @@ function renderTable() {
     const end = Math.min(start + pagination.perPage, filteredData.length);
     const pageData = filteredData.slice(start, end);
 
-    // console.log('Rendering table with pageData:', pageData);
-
     pageData.forEach((stock, rowIndex) => {
         const row = document.createElement('tr');
         const fiveDayCanvasId = `five-day-chart-${rowIndex}`;
         const fiveDayTooltipCanvasId = `five-day-tooltip-chart-${rowIndex}`;
         const hasRecentData = stock.recent_data && stock.recent_data.length > 0;
 
-        const realtimeChange = stock.RealtimeChange !== null && stock.RealtimeChange !== undefined ? stock.RealtimeChange : 'N/A';
+        const realtimeChange = stock.RealtimeChange ?? 'N/A';
         const realtimeChangeClass = typeof realtimeChange === 'number' ? (realtimeChange > 0 ? 'positive' : realtimeChange < 0 ? 'negative' : '') : '';
 
         let rowHTML = `
@@ -292,18 +266,18 @@ function renderTable() {
                     </div>
                 ` : 'N/A'}
             </td>
-            <td>${stock.StreakDays !== null ? stock.StreakDays : 'N/A'}</td>
-            <td>${stock.OpeningAmount !== null ? stock.OpeningAmount : 'N/A'}</td>
-            <td>${stock.LimitUpOrderAmount !== null ? stock.LimitUpOrderAmount : 'N/A'}</td>
-            <td>${stock.FirstLimitUpTime || 'N/A'}</td>
-            <td>${stock.FinalLimitUpTime || 'N/A'}</td>
-            <td>${stock.LimitUpOpenTimes !== null ? stock.LimitUpOpenTimes : 'N/A'}</td>
-            <td class="${stock.PopularityRank && parseFloat(stock.PopularityRank) < 300 ? 'highlight-red' : ''}">${stock.PopularityRank || 'N/A'}</td>
-            <td>${stock.TurnoverAmount || 'N/A'}</td>
-            <td class="${stock.TurnoverRank && parseFloat(stock.TurnoverRank) < 300 ? 'highlight-red' : ''}">${stock.TurnoverRank || 'N/A'}</td>
-            <td>${stock.ReasonCategory || 'N/A'}</td>
+            <td>${stock.StreakDays ?? 'N/A'}</td>
+            <td>${stock.OpeningAmount ?? 'N/A'}</td>
+            <td>${stock.LimitUpOrderAmount ?? 'N/A'}</td>
+            <td>${stock.FirstLimitUpTime ?? 'N/A'}</td>
+            <td>${stock.FinalLimitUpTime ?? 'N/A'}</td>
+            <td>${stock.LimitUpOpenTimes ?? 'N/A'}</td>
+            <td class="${stock.PopularityRank && parseFloat(stock.PopularityRank) < 300 ? 'highlight-red' : ''}">${stock.PopularityRank ?? 'N/A'}</td>
+            <td>${stock.TurnoverAmount ?? 'N/A'}</td>
+            <td class="${stock.TurnoverRank && parseFloat(stock.TurnoverRank) < 300 ? 'highlight-red' : ''}">${stock.TurnoverRank ?? 'N/A'}</td>
+            <td>${stock.ReasonCategory ?? 'N/A'}</td>
             <td class="${realtimeChangeClass}">${realtimeChange === 0 ? '0' : realtimeChange}</td>
-            <td>${stock.RealtimePrice || 'N/A'}</td>
+            <td>${stock.RealtimePrice ?? 'N/A'}</td>
             <td>
                 <button class="btn pin-btn" data-stock-code="${stock.StockCode}">${pinnedStocks.has(stock.StockCode) ? 'Unpin' : 'Pin'}</button>
                 <button class="btn hide-btn" data-stock-code="${stock.StockCode}">${hiddenStocks.has(stock.StockCode) ? 'Show' : 'Hide'}</button>
@@ -318,28 +292,20 @@ function renderTable() {
         pinBtn.addEventListener('click', () => togglePin(stock.StockCode));
         hideBtn.addEventListener('click', () => toggleHide(stock.StockCode));
 
-        // console.log(`Rendered row ${rowIndex}:`, stock);
-
         if (hasRecentData) {
             const fiveDayCanvas = document.getElementById(fiveDayCanvasId);
             if (fiveDayCanvas) {
                 createCandlestickChart(fiveDayCanvasId, stock.recent_data.slice(0, 5), true);
-            } else {
-                console.error(`Five-day canvas ${fiveDayCanvasId} not found`);
             }
-
             const fiveDayTooltipCanvas = document.getElementById(fiveDayTooltipCanvasId);
             if (fiveDayTooltipCanvas) {
                 createCandlestickChart(fiveDayTooltipCanvasId, stock.recent_data.slice(0, 5), false);
-            } else {
-                console.error(`Five-day tooltip canvas ${fiveDayTooltipCanvasId} not found`);
             }
         }
     });
 
     renderPagination(pagination);
 
-    // 添加行数统计
     const tableContainer = document.querySelector('.table-container');
     let rowCount = tableContainer.querySelector('.row-count');
     if (!rowCount) {
@@ -348,9 +314,13 @@ function renderTable() {
         rowCount.style.cssText = 'text-align: right; padding: 5px; font-size: 14px; color: #666;';
         tableContainer.insertBefore(rowCount, tableContainer.firstChild);
     }
-    rowCount.textContent = `Rows: ${filteredData.length}`;  // 显示总行数
-    
-    console.log('Table rendered with pageData length:', pageData.length);
+    rowCount.textContent = `Rows: ${filteredData.length}`;
+
+    // 重新绑定排序事件
+    setTimeout(() => {
+        makeTableSortable();
+        bindSortEvents(filteredData, sortRules, renderTable, saveState);
+    }, 0);
 }
 
 function saveState() {
@@ -365,5 +335,4 @@ function saveState() {
         streakFilter: document.getElementById('streakFilter').value
     };
     sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
-    console.log('State saved to sessionStorage');
 }

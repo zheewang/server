@@ -62,7 +62,8 @@
 
         window.HOST = "{{ config['HOST'] }}";
         window.PORT = "{{ config['PORT'] }}";
-                // 此处必须加上监听特定的event命名空间，否则会导致连接失败
+        
+        // 此处必须加上监听特定的event命名空间，否则会导致连接失败
         const socket = io.connect(`http://${window.HOST}:${window.PORT}/stocks_realtime`, { 
             transports: ['websocket', 'polling'], 
             reconnection: true, 
