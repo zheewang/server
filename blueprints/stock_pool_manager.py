@@ -206,7 +206,7 @@ class RealtimeUpdater:
             if updates:
                 try:
                     socketio.emit('realtime_update', updates, namespace='/stocks_realtime')
-                    logger.debug(f"[global] Emitted updates: {updates}")
+                    #logger.debug(f"[global] Emitted updates: {updates}")
                     self.last_emitted_data.update(updates)
                 except Exception as e:
                     logger.error(f"[global] Error emitting updates: {e}")
@@ -397,7 +397,7 @@ class RealtimeUpdater:
             socketio.start_background_task(self.pool_update_task)
             self.source_tasks['mairui'] = socketio.start_background_task(self.data_update_task, 'mairui')
             #self.source_tasks['selenium'] = socketio.start_background_task(self.data_update_task, 'selenium')
-            self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
+            #self.source_tasks['tushare'] = socketio.start_background_task(self.data_update_task, 'tushare')
             logger.info("[global] Realtime updater started with multi-source tasks")
             print("Realtime updater started with mairui ,tushare,and selenium tasks")
             gevent.sleep(1)
