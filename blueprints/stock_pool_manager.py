@@ -98,11 +98,11 @@ class DataAdapter:
     def mairui_adapter(data, stock_code):
         updated_data = {}
         if data and isinstance(data, dict):
-            price = float(data.get('p', 0))
-            prev_close = float(data.get('yc', 0))
+            price = round(float(data.get('p', 0)), 2)  # MODIFIED - 保留小数点后两位
+            prev_close = round(float(data.get('yc', 0)), 2)  # MODIFIED - 保留小数点后两位
             updated_data[stock_code] = {
                 'RealtimePrice': price,
-                'RealtimeChange': float(data.get('pc', 0)) if data.get('pc') else round(((price - prev_close) / prev_close * 100) if prev_close != 0 else 0, 2)
+                'RealtimeChange': round(float(data.get('pc', 0)), 2) if data.get('pc') else round(((price - prev_close) / prev_close * 100) if prev_close != 0 else 0, 2)
             }
         return updated_data
 
@@ -250,27 +250,51 @@ class RealtimeUpdater:
                         if code not in self.realtime_data or
                         (time.time() - self.realtime_data[code].get('last_updated', 0) > 300)
                     ]
-                    batch_size = DATA_SOURCES[source].get('batch_size', 10)
-                    for i in range(0, len(codes_to_fetch), batch_size):  # 分批处理所有代码
+                    batch_size = DATA_SOURCES[source].get('batch_size', 20)  # NEW - 批量查询支持
+                    for i in range(0, len(codes_to_fetch), batch_size):
                         batch = codes_to_fetch[i:i + batch_size]
-                        for code in batch:
-                            urls = [DATA_SOURCES[source]['main_url'], DATA_SOURCES[source]['backup_url']]
-                            success = False
-                            for url_template in urls:
-                                url = url_template.format(code=code, licence=DATA_SOURCES[source]['licence'])
-                                try:
-                                    response = requests.get(url, timeout=5)
-                                    response.raise_for_status()
-                                    data = response.json()
-                                    batch_data = DataAdapter.mairui_adapter(data, code)
-                                    updated_data.update(batch_data)
-                                    success = True
-                                    break
-                                except requests.RequestException as e:
-                                    logger.warning(f"[{caller}] Mairui request failed for {code} with {url}: {str(e)}")
-                            if not success:
-                                logger.error(f"[{caller}] Failed to fetch {code} from mairui after trying all URLs")
-                            gevent.sleep(DATA_SOURCES[source]['rate_limit'])  # 每请求一个股票后休眠
+                        # NEW - 批量查询支持：尝试使用批量查询接口
+                        success = False
+                        url_template = DATA_SOURCES[source]['backup_url']
+                        url = url_template.format(licence=DATA_SOURCES[source]['licence']) + f"?stock_codes={','.join(batch)}"
+                        try:
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data_list = response.json()
+                            if isinstance(data_list, list):
+                                for data in data_list:
+                                    code = data.get('dm', '')
+                                    if code in batch:
+                                        batch_data = DataAdapter.mairui_adapter(data, code)
+                                        updated_data.update(batch_data)
+                                success = True
+                            else:
+                                logger.warning(f"[{caller}] Mairui batch request returned invalid data for {batch}: {data_list}")
+                        except requests.RequestException as e:
+                            logger.warning(f"[{caller}] Mairui batch request failed for {batch} with {url}: {str(e)}")
+                        gevent.sleep(DATA_SOURCES[source]['rate_limit'])  # NEW - 添加批量查询的 rate_limit
+
+                        # NEW - 批量查询支持：如果批量查询失败，回退到单股票查询
+                        if not success:
+                            logger.info(f"[{caller}] Falling back to single stock query for {batch}")
+                            for code in batch:
+                                urls = [DATA_SOURCES[source]['main_url'], DATA_SOURCES[source]['backup_url']]
+                                single_success = False
+                                for url_template in urls:
+                                    url = url_template.format(code=code, licence=DATA_SOURCES[source]['licence'])
+                                    try:
+                                        response = requests.get(url, timeout=5)
+                                        response.raise_for_status()
+                                        data = response.json()
+                                        batch_data = DataAdapter.mairui_adapter(data, code)
+                                        updated_data.update(batch_data)
+                                        single_success = True
+                                        break
+                                    except requests.RequestException as e:
+                                        logger.warning(f"[{caller}] Mairui single request failed for {code} with {url}: {str(e)}")
+                                if not single_success:
+                                    logger.error(f"[{caller}] Failed to fetch {code} from mairui after trying all URLs")
+                                gevent.sleep(DATA_SOURCES[source]['rate_limit'])  # 每请求一个股票后休眠
 
                 if updated_data:
                     with self.realtime_lock:
