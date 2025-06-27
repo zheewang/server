@@ -303,7 +303,7 @@ class RealtimeUpdater:
                             data['last_updated'] = current_time
                             self.realtime_data[code] = data
                     self.emit_updates(updated_data)
-                logger.debug(f"[{caller}] {source} returned {len(updated_data)} stocks: {updated_data}")
+                logger.debug(f"[{caller}] {source} returned {len(updated_data)} stocks: ")    # {updated_data}
                 return updated_data
             except Exception as e:
                 logger.error(f"[{caller}] Error fetching {source} data: {str(e)}", exc_info=True)
@@ -335,10 +335,10 @@ class RealtimeUpdater:
                     except gevent.queue.Empty:
                         break
 
-                # stocks_pool里面的stocks，如果超过两小时，还没有接到前端来的更新要求，将从池子里删去。
+                # stocks_pool里面的stocks，如果超过两小时(改为4小时)，还没有接到前端来的更新要求，将从池子里删去。
                 with self.realtime_lock:
                     expired = [code for code, info in self.stocks_pool.items() 
-                              if time.time() - info['last_updated'] > 7200]
+                              if time.time() - info['last_updated'] > 14400]
                     for code in expired:
                         del self.stocks_pool[code]
                         if code in self.realtime_data:
@@ -359,7 +359,7 @@ class RealtimeUpdater:
                 with self.realtime_lock:
                     self.custom_stocks = [key for key, value in self.stocks_pool.items() if 'custom_stock' in value['sources']]
                     if source == 'mairui':
-                        local_stock_codes = [code for code in self.stocks_pool.keys()  if code in self.custom_stocks]
+                        local_stock_codes = [code for code in self.stocks_pool.keys() ] # if code not in self.custom_stocks] # 由mairui更新的股票池
                     elif source == 'tushare':
                         local_stock_codes = [code for code in self.stocks_pool.keys() if code not in self.custom_stocks]
                     elif source == 'selenium':

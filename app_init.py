@@ -60,7 +60,7 @@ def init_socketio(socketio):
         
         # 映射 dashboard 到 stocks_pool 的 sources
         source_mapping = {
-            'stock_dashboard': None,  # 默认所有股票
+            'stock_dashboard': 'data_dashboard',  
             'ma_strategy_dashboard': 'ma_strategy',
             'custom_stock_dashboard': 'custom_stock',
             'limitup_unfilled_orders_dashboard': 'limitup_unfilled_orders'

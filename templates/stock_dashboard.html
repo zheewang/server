@@ -16,21 +16,31 @@
             </div>
             <div>
                 <label for="sector_name">Sector Name:</label>
-                <select id="sector_name" name="sector_name">
-                    <option value="">Select a sector</option>
+                <select id="sector_name" name="sector_name" multiple="multiple">
+                    <option value="">Select a sector</option>    
                 </select>
             </div>
             <div>
                 <label for="sector_code">Sector Code:</label>
-                <input type="text" id="sector_code" name="sector_code" >
+                <input type="text" id="sector_code" name="sector_code" readonly >
             </div>
-
+            <div>
+                <label for="typeFilter">Type:</label>
+                <select id="typeFilter" name="typeFilter" onchange="applyFilters()">
+                    <!-- JavaScript 将动态填充其他选项 -->
+                </select>
+            </div>
             <div>
                 <label for="perPage">Items per page:</label>
                 <input type="number" id="perPage" name="perPage" value="30" min="1">
             </div>
+
+            <div>
             <!-- 移除 onclick，改为 JS 绑定 -->
             <button id="fetchDataBtn" class="btn">Fetch Data</button>
+            <button id="refreshRealtimeBtn" class="btn">Refresh Realtime Data</button>
+            </div>
+
             <div>
                 <label for="search">Search:</label>
                 <input type="text" id="search" name="search" placeholder="Stock Code or Name" >
@@ -49,6 +59,8 @@
                         <th data-sort="LatestLimitUpDate" data-text="Latest Limit Up Date">Latest Limit Up Date</th>
                         <th data-sort='ReasonCategory' data-text="Limit Up Reason Category">Limit Up Reason Category</th>               
                         <th data-text="3-Day Candlestick">3-Day Candlestick</th>
+                        <th data-sort='RealtimeChange' data-text="Realtime Change" >Realtime Change </th>
+                        <th data-sort='RealtimePrice' data-text="Realtime Price" >Realtime Price </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -65,11 +77,16 @@
     </div>
 {% endblock %}
 {% block scripts %}
+
+    <!-- 加载模块化脚本 -->
     <script src="/static/js/common.js"></script>
-    <script type="module" src="/static/js/utils.js"></script>
-    <script type="module" src="/static/js/stock_dashboard.js"></script>
+    <script src="/static/js/utils.js" type="module"></script>
+    <script src="/static/js/stock_dashboard.js" type="module"></script>
+        <!-- 修改 2：定义 HOST 和 PORT -->
     <script>
         window.HOST = "{{ config['HOST'] }}";
         window.PORT = "{{ config['PORT'] }}";
-    </script>    
+    </script>
+
+
 {% endblock %}

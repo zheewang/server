@@ -1,3 +1,4 @@
+
 import {
     initPagination,
     updatePagination,
@@ -9,6 +10,7 @@ import {
     bindSortEvents,
     makeTableSortable,
 } from './utils.js';
+import { registerUpdateHandler, updateData } from './realtime.js';
 
 let pagination = initPagination();
 let stockData = [];
@@ -17,20 +19,68 @@ let sortRules = [];
 let recentDates = [];
 let sectors = [];
 
+
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'stock_dashboard';
 
+// 节流函数
+function throttle(fn, delay) {
+    let lastCall = 0;
+    return function (...args) {
+        const now = Date.now();
+        if (now - lastCall >= delay) {
+            fn(...args);
+            lastCall = now;
+        }
+    };
+}
+
+// 创建节流版本的 saveState，每 5 秒最多保存一次
+const throttledSaveState = throttle(saveState, 5000);
+
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, registering handler');
+    // 注册实时更新处理
+    registerUpdateHandler('realtime_update', 'StockCode', (data) => {
+        updateData(data, stockData, 'StockCode');
+        applyFilters();
+        renderTable();
+        throttledSaveState();
+    });
+
+    makeTableSortable();
+
+    const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
+    if (savedState) {
+        pagination.currentPage = savedState.currentPage || 1;
+        pagination.perPage = savedState.perPage || 30;
+        stockData = savedState.stockData || [];
+        filteredData = savedState.filteredData || [...stockData];
+        sortRules = savedState.sortRules || [];
+        document.getElementById('perPage').value = pagination.perPage;
+        document.getElementById('date').value = savedState.date || '';
+        document.getElementById('th_sector_index').value = savedState.thSectorIndex || '';
+        document.getElementById('sector_code').value = savedState.sectorCodes ? savedState.sectorCodes.join(',') : '';
+        document.getElementById('typeFilter').value = savedState.typeFilter || 'All';
+        if (stockData.length > 0) {
+            populateTypeFilter();
+            updatePagination(pagination, filteredData.length);
+            updateTableHeaders();
+            renderTable();
+        }
+    } else {
+        stockData = [];
+        filteredData = [];
+        renderTable();
+    }
+
     fetch(`${BASE_URL}/api/sectors`)
         .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             return response.json();
         })
         .then(data => {
             sectors = data;
-
             const thsSelect = document.getElementById('th_sector_index');
             const uniqueTHS = [...new Set(sectors.map(s => s.THSSectorIndex))];
             uniqueTHS.forEach(ths => {
@@ -40,23 +90,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 thsSelect.appendChild(option);
             });
 
+            // 修改 2：启用 Select2 多选
             $('#sector_name').select2({
                 placeholder: 'Search a sector',
-                allowClear: true
+                allowClear: true,
+                multiple: true
             });
+
+            //const sectorNameSelect = document.getElementById('sector_name');
+            //sectors.forEach(sector => {
+            //    const option = document.createElement('option');
+            //    option.value = sector.SectorIndexCode;
+            //    option.textContent = sector.SectorIndexName;
+            //    sectorNameSelect.appendChild(option);
+            //});
+
+            //if (savedState && savedState.sectorCodes) {
+            //    sectorNameSelect.value = savedState.sectorCodes;
+            //}
 
             const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
             if (savedState) {
                 pagination.currentPage = savedState.currentPage || 1;
                 pagination.perPage = savedState.perPage || 30;
                 stockData = savedState.stockData || [];
-                filteredData = savedState.filteredData || [...stockData]; // 明确初始化
+                filteredData = savedState.filteredData || [...stockData];
                 sortRules = savedState.sortRules || [];
                 document.getElementById('perPage').value = pagination.perPage;
                 document.getElementById('date').value = savedState.date || '';
                 document.getElementById('th_sector_index').value = savedState.thSectorIndex || '';
-                document.getElementById('sector_name').value = savedState.sectorName || '';
-                document.getElementById('sector_code').value = savedState.sectorCode || '';
+                // 修改 3：恢复多选板块
+                if (savedState.sectorCodes) {
+                    $('#sector_name').val(savedState.sectorCodes).trigger('change');
+                }
+                document.getElementById('sector_code').value = savedState.sectorCodes ? savedState.sectorCodes.join(',') : '';
                 if (stockData.length > 0) {
                     updatePagination(pagination, filteredData.length);
                     updateTableHeaders();
@@ -64,98 +131,101 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // 延迟绑定排序事件
             setTimeout(() => {
                 makeTableSortable();
                 bindSortEvents(filteredData, sortRules, renderTable, saveState);
                 console.log('Sorting events bound');
             }, 0);
+
+            bindPerPageInput(pagination, filteredData, renderTable, saveState);
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);
+
+            document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
+            document.getElementById('refreshRealtimeBtn')?.addEventListener('click', () => {
+                console.log('Emitting refresh_realtime_data');
+                window.socket.emit('refresh_realtime_data', { dashboards: ['stock_dashboard'] });
+            });
+
+            document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
+            document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
+            document.getElementById('search')?.addEventListener('input', applyFilters);
+
+            // 修改 5：调整 th_sector_index 事件，支持叠加多选
+            document.getElementById('th_sector_index').addEventListener('change', function() {
+                const selectedTHS = this.value;
+                const sectorNameSelect = document.getElementById('sector_name');
+                const sectorCodeInput = document.getElementById('sector_code');
+
+                const currentSelections = $('#sector_name').val() || [];
+
+                sectorNameSelect.innerHTML = '';
+                const allSectors = selectedTHS
+                    ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
+                    : sectors;
+                allSectors.forEach(sector => {
+                    const option = document.createElement('option');
+                    option.value = sector.SectorIndexCode;
+                    option.textContent = sector.SectorIndexName;
+                    option.dataset.code = sector.SectorIndexCode;
+                    sectorNameSelect.appendChild(option);
+                });
+
+                $('#sector_name').select2({
+                    placeholder: 'Search a sector',
+                    allowClear: true,
+                    multiple: true
+                });
+
+                $('#sector_name').val(currentSelections).trigger('change');
+                saveState();
+            });
+
+            // 修改 6：处理多选板块代码
+            $('#sector_name').on('change', function() {
+                const selectedCodes = $(this).val() || [];
+                const sectorCodeInput = document.getElementById('sector_code');
+                sectorCodeInput.value = selectedCodes.join(',');
+                saveState();
+            });   
+
+            const typeFilter = document.getElementById('typeFilter');
+            if (typeFilter) {
+                typeFilter.addEventListener('change', applyFilters);
+            } else {
+                console.error('typeFilter element not found');
+            }
         })
-        .catch(error => {
-            console.error('Error fetching sectors:', error);
-        });
-
-    bindPerPageInput(pagination, filteredData, renderTable, saveState);
-
-    document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
-    document.getElementById('prevPage')?.addEventListener('click', () => changePage(pagination, -1, renderTable));
-    document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
-    document.getElementById('search')?.addEventListener('input', applyFilters);
-
-    document.getElementById('th_sector_index').addEventListener('change', function() {
-        const selectedTHS = this.value;
-        const sectorNameSelect = document.getElementById('sector_name');
-        const sectorCodeInput = document.getElementById('sector_code');
-
-        sectorNameSelect.innerHTML = '<option value="">Select a sector</option>';
-        sectorCodeInput.value = '';
-
-        if (selectedTHS) {
-            const filteredSectors = sectors.filter(sector => sector.THSSectorIndex === selectedTHS);
-            filteredSectors.forEach(sector => {
-                const option = document.createElement('option');
-                option.value = sector.SectorIndexCode;
-                option.textContent = sector.SectorIndexName;
-                option.dataset.code = sector.SectorIndexCode;
-                sectorNameSelect.appendChild(option);
-            });
-
-            $('#sector_name').select2({
-                placeholder: 'Search a sector',
-                allowClear: true
-            });
-            saveState();
-        }
-    });
-
-    $('#sector_name').on('change', function() {
-        const selectedCode = $(this).val();
-        const sectorCodeInput = document.getElementById('sector_code');
-        if (selectedCode) {
-            sectorCodeInput.value = selectedCode;
-        } else {
-            sectorCodeInput.value = '';
-        }
-        saveState();
-    });
+        .catch(error => console.error('Error fetching sectors:', error));
 });
 
 function fetchData() {
     const date = document.getElementById('date').value;
-    const sectorCode = document.getElementById('sector_code').value;
+    const sectorCodes = document.getElementById('sector_code').value;
     pagination.perPage = parseInt(document.getElementById('perPage').value, 10) || 30;
 
-    if (!date || !sectorCode) {
-        alert('Please enter a date and specify a sector code');
+    if (!date || !sectorCodes) {
+        alert('Please enter a date and select at least one sector');
         return;
     }
 
-    const url = `${BASE_URL}/api/stock_data?date=${date}&sector_code=${sectorCode}`;
+    const url = `${BASE_URL}/api/stock_data?date=${date}&sector_codes=${encodeURIComponent(sectorCodes)}`;
     console.log('Fetching data with URL:', url);
 
     fetch(url)
         .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             return response.json();
         })
         .then(data => {
-            if (!Array.isArray(data)) {
-                throw new Error('Expected an array but received: ' + JSON.stringify(data));
-            }
-
-            stockData = data;
+            if (!Array.isArray(data)) throw new Error('Expected an array but received: ' + JSON.stringify(data));
+            stockData = data.map(item => ({
+                ...item,
+                RealtimeChange: item.RealtimeChange ?? 'N/A',
+                RealtimePrice: item.RealtimePrice ?? 'N/A'
+            }));
             filteredData = [...stockData];
-            updateTableHeaders();
-            updatePagination(pagination, filteredData.length);
-            renderTable();
-            saveState();
-            // 重新绑定排序事件
-            setTimeout(() => {
-                makeTableSortable();
-                bindSortEvents(filteredData, sortRules, renderTable, saveState);
-            }, 0);
+            populateTypeFilter();
+            applyFilters(); // 直接调用 applyFilters
         })
         .catch(error => {
             console.error('Error fetching data:', error);
@@ -166,11 +236,42 @@ function fetchData() {
         });
 }
 
+function populateTypeFilter() {
+    const typeFilter = document.getElementById('typeFilter');
+    const currentValue = typeFilter.value;
+    typeFilter.innerHTML = '<option value="All">All</option>';
+    const types = [...new Set(stockData.map(item => item.type).filter(type => type !== null && type !== undefined))];
+    types.sort();
+
+    types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        typeFilter.appendChild(option);
+    });
+
+    typeFilter.value = currentValue && typeFilter.querySelector(`option[value="${currentValue}"]`) ? currentValue : 'All';
+}
+
+function applyFilters() {
+    const typeFilter = document.getElementById('typeFilter').value;
+    const searchValue = document.getElementById('search').value.toLowerCase();
+    filteredData = stockData.filter(stock =>
+        (typeFilter === 'All' || stock.type === typeFilter) &&
+        (stock.StockCode.toLowerCase().includes(searchValue) || stock.StockName.toLowerCase().includes(searchValue))
+    );
+    updateTableHeaders();
+    updatePagination(pagination, filteredData.length);
+    renderTable();
+    bindSortEvents(filteredData, sortRules, renderTable, saveState); // 移到此处
+    saveState();
+}
+
 function updateTableHeaders() {
-    if (stockData.length > 0 && stockData[0].recent_data && stockData[0].recent_data.length > 0) {
-        recentDates = stockData[0].recent_data.map(item => item.trading_Date).slice(0, 3);
+    if (filteredData.length > 0 && filteredData[0].recent_data && filteredData[0].recent_data.length > 0) {
+        recentDates = filteredData[0].recent_data.map(item => item.trading_Date).slice(0, 3);
         const thead = document.getElementById('tableHeader').querySelector('tr');
-        while (thead.children.length > 8) {
+        while (thead.children.length > 10) {
             thead.removeChild(thead.lastChild);
         }
         recentDates.forEach((date, index) => {
@@ -180,32 +281,13 @@ function updateTableHeaders() {
             th.dataset.text = date;
             thead.appendChild(th);
         });
-        // 重新绑定排序事件
-        setTimeout(() => {
-            bindSortEvents(filteredData, sortRules, renderTable, saveState);
-        }, 0);
+        bindSortEvents(filteredData, sortRules, renderTable, saveState);
     } else {
         const thead = document.getElementById('tableHeader').querySelector('tr');
-        while (thead.children.length > 8) {
+        while (thead.children.length > 10) {
             thead.removeChild(thead.lastChild);
         }
     }
-}
-
-function applyFilters() {
-    const searchValue = document.getElementById('search').value.toLowerCase();
-    filteredData = stockData.filter(stock =>
-        stock.StockCode.toLowerCase().includes(searchValue) ||
-        stock.StockName.toLowerCase().includes(searchValue)
-    );
-    updatePagination(pagination, filteredData.length);
-    renderTable();
-    saveState();
-    // 重新绑定排序事件
-    setTimeout(() => {
-        makeTableSortable();
-        bindSortEvents(filteredData, sortRules, renderTable, saveState);
-    }, 0);
 }
 
 function renderTable() {
@@ -226,6 +308,9 @@ function renderTable() {
         const threeDayTooltipCanvasId = `three-day-tooltip-chart-${rowIndex}`;
         const hasRecentData = stock.recent_data && stock.recent_data.length > 0;
 
+        const realtimeChange = stock.RealtimeChange ?? 'N/A';
+        const realtimeChangeClass = typeof realtimeChange === 'number' ? (realtimeChange > 0 ? 'positive' : realtimeChange < 0 ? 'negative' : '') : '';
+
         let rowHTML = `
             <td>${stock.StockCode}</td>
             <td>${stock.StockName}</td>
@@ -242,6 +327,8 @@ function renderTable() {
                     </div>
                 ` : 'N/A'}
             </td>
+            <td class="${realtimeChangeClass}">${realtimeChange === 'N/A' ? 'N/A' : (realtimeChange === 0 ? '0.00%' : (realtimeChange > 0 ? '+' : '') + realtimeChange.toFixed(2) + '%')}</td>
+            <td>${realtimeChange === 'N/A' ? 'N/A' : parseFloat(stock.RealtimePrice).toFixed(2)}</td>
         `;
 
         if (hasRecentData) {
@@ -308,7 +395,6 @@ function renderTable() {
     }
     rowCount.textContent = `Rows: ${filteredData.length}`;
 
-    // 重新绑定排序事件
     setTimeout(() => {
         makeTableSortable();
         bindSortEvents(filteredData, sortRules, renderTable, saveState);
@@ -316,6 +402,7 @@ function renderTable() {
 }
 
 function saveState() {
+    // 修改 12：保存多选板块代码
     const state = {
         currentPage: pagination.currentPage,
         perPage: pagination.perPage,
@@ -324,8 +411,7 @@ function saveState() {
         sortRules,
         date: document.getElementById('date').value,
         thSectorIndex: document.getElementById('th_sector_index').value,
-        sectorName: document.getElementById('sector_name').value,
-        sectorCode: document.getElementById('sector_code').value
+        sectorCodes: $('#sector_name').val() || [],
     };
     sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
 }

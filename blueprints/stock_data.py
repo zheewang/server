@@ -11,8 +11,9 @@ stock_data_bp = Blueprint('stock_data', __name__)
 @stock_data_bp.route('/stock_data', methods=['GET'])
 @cache.cached(timeout=30, query_string=True)
 def get_stock_data():
+    # 修改 1：更改参数为 sector_codes
     date_str = request.args.get('date')
-    sector_code = request.args.get('sector_code')
+    sector_codes = request.args.get('sector_codes')
     
     if not date_str:
         return jsonify({'error': 'Date parameter is required'}), 400
@@ -21,7 +22,7 @@ def get_stock_data():
 
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d')
-        logger.debug(f"Processing request for date: {date_str}, sector_code: {sector_code}")
+        logger.debug(f"Processing request for date: {date_str}, sector_codes: {sector_codes}")
         
         with app.app_context():
             nearest_trading_date = get_nearest_trading_date(target_date, TradingDay)
@@ -33,15 +34,27 @@ def get_stock_data():
                 return jsonify({'error': 'No recent trading dates available'}), 404
 
             query = db.session.query(StockPopularityRanking).filter_by(date=target_date)
-            if sector_code:
-                query = query.join(
-                    StockSectorMapping,
-                    StockPopularityRanking.StockCode == StockSectorMapping.StockCode
-                ).filter(StockSectorMapping.SectorCode == sector_code)
+            # 修改 2：支持多板块交集查询
+            if sector_codes:
+                sector_codes_list = sector_codes.split(',')
+                if len(sector_codes_list) == 1:
+                    query = query.join(
+                        StockSectorMapping,
+                        StockPopularityRanking.StockCode == StockSectorMapping.StockCode
+                    ).filter(StockSectorMapping.SectorCode == sector_codes_list[0])
+                else:
+                    query = query.join(
+                        StockSectorMapping,
+                        StockPopularityRanking.StockCode == StockSectorMapping.StockCode
+                    ).filter(
+                        StockSectorMapping.SectorCode.in_(sector_codes_list)
+                    ).group_by(StockPopularityRanking.StockCode).having(
+                        db.func.count(db.distinct(StockSectorMapping.SectorCode)) == len(sector_codes_list)
+                    )
 
             popularity_data = query.all()
             if not popularity_data:
-                logger.info(f"No data found for date: {date_str}, sector_code: {sector_code}")
+                logger.info(f"No data found for date: {date_str}, sector_codes: {sector_codes}")
                 return jsonify({'message': 'No data found for the specified criteria'}), 200
                 
             stock_codes = [p.StockCode for p in popularity_data]
@@ -50,6 +63,12 @@ def get_stock_data():
                 popularity_data, stock_codes, nearest_trading_date, recent_trading_dates,
                 (StockPopularityRanking, StockTurnoverRanking, DailyLimitUpStocks, DailyStockData)
             )
+
+            # 修改 3：简化实时数据获取，模仿 limitup_unfilled_orders.py
+            from blueprints.stock_pool_manager import global_updater
+            realtime_data = global_updater.get_realtime_data(stock_codes, source='mairui', caller='stock_data')
+            logger.debug(f"Realtime data: {realtime_data}")
+
 
             stock_data = []
             for pop in popularity_data:
@@ -63,6 +82,9 @@ def get_stock_data():
                     'TurnoverRank': None,
                     'LatestLimitUpDate': None,
                     'ReasonCategory': None,
+                    # 修改 4：添加实时数据字段
+                    'RealtimeChange': 'N/A',
+                    'RealtimePrice': 'N/A',
                     'recent_data': []
                 }
 
@@ -92,6 +114,12 @@ def get_stock_data():
                             'low': float(d.low) if d.low else None
                         }
                         stock_info['recent_data'].append(day_data)
+
+                # 修改 5：简化实时数据填充，模仿 limitup_unfilled_orders.py
+                if pop.StockCode in realtime_data:
+                    r = realtime_data[pop.StockCode]
+                    stock_info['RealtimeChange'] = r['RealtimeChange']
+                    stock_info['RealtimePrice'] = r['RealtimePrice']
 
                 stock_data.append(stock_info)
 
