@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     makeTableSortable();
 
+    // 加载保存的状态
     const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
     if (savedState) {
         pagination.currentPage = savedState.currentPage || 1;
@@ -74,6 +75,7 @@ document.addEventListener('DOMContentLoaded', function() {
         renderTable();
     }
 
+    // 获取板块数据
     fetch(`${BASE_URL}/api/sectors`)
         .then(response => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -90,53 +92,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 thsSelect.appendChild(option);
             });
 
-            // 修改 2：启用 Select2 多选
+            // 根据 th_sector_index 或保存的状态填充 sector_name 选项
+            const selectedTHS = savedState?.thSectorIndex || thsSelect.value;
+            const sectorNameSelect = document.getElementById('sector_name');
+            sectorNameSelect.innerHTML = ''; // 清空现有选项
+            const allSectors = selectedTHS
+                ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
+                : sectors;
+            allSectors.forEach(sector => {
+                const option = document.createElement('option');
+                option.value = sector.SectorIndexCode;
+                option.textContent = sector.SectorIndexName;
+                option.dataset.code = sector.SectorIndexCode;
+                sectorNameSelect.appendChild(option);
+            });
+
+            // 初始化 Select2
             $('#sector_name').select2({
                 placeholder: 'Search a sector',
                 allowClear: true,
                 multiple: true
             });
 
-            //const sectorNameSelect = document.getElementById('sector_name');
-            //sectors.forEach(sector => {
-            //    const option = document.createElement('option');
-            //    option.value = sector.SectorIndexCode;
-            //    option.textContent = sector.SectorIndexName;
-            //    sectorNameSelect.appendChild(option);
-            //});
-
-            //if (savedState && savedState.sectorCodes) {
-            //    sectorNameSelect.value = savedState.sectorCodes;
-            //}
-
-            const savedState = JSON.parse(sessionStorage.getItem(`${PAGE_KEY}_state`));
-            if (savedState) {
-                pagination.currentPage = savedState.currentPage || 1;
-                pagination.perPage = savedState.perPage || 30;
-                stockData = savedState.stockData || [];
-                filteredData = savedState.filteredData || [...stockData];
-                sortRules = savedState.sortRules || [];
-                document.getElementById('perPage').value = pagination.perPage;
-                document.getElementById('date').value = savedState.date || '';
-                document.getElementById('th_sector_index').value = savedState.thSectorIndex || '';
-                // 修改 3：恢复多选板块
-                if (savedState.sectorCodes) {
-                    $('#sector_name').val(savedState.sectorCodes).trigger('change');
-                }
-                document.getElementById('sector_code').value = savedState.sectorCodes ? savedState.sectorCodes.join(',') : '';
-                if (stockData.length > 0) {
-                    updatePagination(pagination, filteredData.length);
-                    updateTableHeaders();
-                    renderTable();
-                }
+            // 恢复 sector_name 的保存状态
+            if (savedState?.sectorCodes) {
+                $('#sector_name').val(savedState.sectorCodes).trigger('change');
             }
 
-            setTimeout(() => {
-                makeTableSortable();
-                bindSortEvents(filteredData, sortRules, renderTable, saveState);
-                console.log('Sorting events bound');
-            }, 0);
-
+            // 绑定事件
             bindPerPageInput(pagination, filteredData, renderTable, saveState);
             bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
@@ -150,14 +133,13 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
             document.getElementById('search')?.addEventListener('input', applyFilters);
 
-            // 修改 5：调整 th_sector_index 事件，支持叠加多选
+            // 处理 th_sector_index 变化
             document.getElementById('th_sector_index').addEventListener('change', function() {
                 const selectedTHS = this.value;
                 const sectorNameSelect = document.getElementById('sector_name');
                 const sectorCodeInput = document.getElementById('sector_code');
 
                 const currentSelections = $('#sector_name').val() || [];
-
                 sectorNameSelect.innerHTML = '';
                 const allSectors = selectedTHS
                     ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
@@ -170,23 +152,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     sectorNameSelect.appendChild(option);
                 });
 
+                // 重新初始化 Select2
                 $('#sector_name').select2({
                     placeholder: 'Search a sector',
                     allowClear: true,
                     multiple: true
                 });
 
+                // 恢复当前选择
                 $('#sector_name').val(currentSelections).trigger('change');
+                sectorCodeInput.value = currentSelections.join(',');
                 saveState();
             });
 
-            // 修改 6：处理多选板块代码
+            // 处理 sector_name 变化
             $('#sector_name').on('change', function() {
                 const selectedCodes = $(this).val() || [];
-                const sectorCodeInput = document.getElementById('sector_code');
-                sectorCodeInput.value = selectedCodes.join(',');
+                document.getElementById('sector_code').value = selectedCodes.join(',');
                 saveState();
-            });   
+            });
 
             const typeFilter = document.getElementById('typeFilter');
             if (typeFilter) {
