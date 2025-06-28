@@ -38,6 +38,41 @@ function throttle(fn, delay) {
 // 创建节流版本的 saveState，每 5 秒最多保存一次
 const throttledSaveState = throttle(saveState, 5000);
 
+
+// 显示加载动画
+function showLoadingSpinner(isFetchData = false) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'block';
+    }
+    // 根据上下文禁用按钮
+    const fetchButton = document.getElementById('fetchDataBtn');
+    const refreshButton = document.getElementById('refreshRealtimeBtn');
+    if (isFetchData) {
+        if (fetchButton) fetchButton.disabled = true;
+        if (refreshButton) refreshButton.disabled = true;
+    } else {
+        if (fetchButton) fetchButton.disabled = true; // 仅禁用 fetchDataBtn
+    }
+}
+
+// 隐藏加载动画
+function hideLoadingSpinner(isFetchData = false) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'none';
+    }
+    // 根据上下文启用按钮
+    const fetchButton = document.getElementById('fetchDataBtn');
+    const refreshButton = document.getElementById('refreshRealtimeBtn');
+    if (isFetchData) {
+        if (fetchButton) fetchButton.disabled = false;
+        if (refreshButton) refreshButton.disabled = false;
+    } else {
+        if (fetchButton) fetchButton.disabled = false; // 仅启用 fetchDataBtn
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, registering handler');
     // 注册实时更新处理
@@ -46,6 +81,7 @@ document.addEventListener('DOMContentLoaded', function() {
         applyFilters();
         renderTable();
         throttledSaveState();
+        hideLoadingSpinner(true); // WebSocket 更新后隐藏动画
     });
 
     makeTableSortable();
@@ -219,39 +255,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 });
 
-// 显示加载动画
-function showLoadingSpinner(isFetchData = false) {
-    const spinner = document.getElementById('loadingSpinner');
-    if (spinner) {
-        spinner.style.display = 'block';
-    }
-    // 根据上下文禁用按钮
-    const fetchButton = document.getElementById('fetchDataBtn');
-    const refreshButton = document.getElementById('refreshRealtimeBtn');
-    if (isFetchData) {
-        if (fetchButton) fetchButton.disabled = true;
-        if (refreshButton) refreshButton.disabled = true;
-    } else {
-        if (fetchButton) fetchButton.disabled = true; // 仅禁用 fetchDataBtn
-    }
-}
-
-// 隐藏加载动画
-function hideLoadingSpinner(isFetchData = false) {
-    const spinner = document.getElementById('loadingSpinner');
-    if (spinner) {
-        spinner.style.display = 'none';
-    }
-    // 根据上下文启用按钮
-    const fetchButton = document.getElementById('fetchDataBtn');
-    const refreshButton = document.getElementById('refreshRealtimeBtn');
-    if (isFetchData) {
-        if (fetchButton) fetchButton.disabled = false;
-        if (refreshButton) refreshButton.disabled = false;
-    } else {
-        if (fetchButton) fetchButton.disabled = false; // 仅启用 fetchDataBtn
-    }
-}
 
 function fetchData() {
     const date = document.getElementById('date').value;
