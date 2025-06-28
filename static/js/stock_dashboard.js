@@ -75,6 +75,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderTable();
     }
 
+    showLoadingSpinner(); // 显示加载动画
+
     // 获取板块数据
     fetch(`${BASE_URL}/api/sectors`)
         .then(response => {
@@ -96,9 +98,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const selectedTHS = savedState?.thSectorIndex || thsSelect.value;
             const sectorNameSelect = document.getElementById('sector_name');
             sectorNameSelect.innerHTML = ''; // 清空现有选项
-            const allSectors = selectedTHS
+            const currentSelections = savedState?.sectorCodes || [];
+            const selectedSectors = currentSelections
+                .map(code => sectors.find(sector => sector.SectorIndexCode === code))
+                .filter(sector => sector);
+            const filteredSectors = selectedTHS
                 ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
                 : sectors;
+            const allSectors = [
+                ...selectedSectors,
+                ...filteredSectors.filter(
+                    sector => !selectedSectors.some(s => s.SectorIndexCode === sector.SectorIndexCode)
+                )
+            ];
             allSectors.forEach(sector => {
                 const option = document.createElement('option');
                 option.value = sector.SectorIndexCode;
@@ -116,7 +128,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // 恢复 sector_name 的保存状态
             if (savedState?.sectorCodes) {
-                $('#sector_name').val(savedState.sectorCodes).trigger('change');
+                const validCodes = savedState.sectorCodes.filter(code =>
+                    Array.from(sectorNameSelect.options).some(opt => opt.value === code)
+                );
+                if (validCodes.length !== savedState.sectorCodes.length) {
+                    console.warn('Some saved sector codes are invalid:', savedState.sectorCodes);
+                }
+                $('#sector_name').val(validCodes).trigger('change');
+                document.getElementById('sector_code').value = validCodes.join(',');
             }
 
             // 绑定事件
@@ -139,11 +158,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 const sectorNameSelect = document.getElementById('sector_name');
                 const sectorCodeInput = document.getElementById('sector_code');
 
+                // 保存当前选择
                 const currentSelections = $('#sector_name').val() || [];
-                sectorNameSelect.innerHTML = '';
-                const allSectors = selectedTHS
+
+                // 获取当前已选择的板块代码对应的完整板块信息
+                const selectedSectors = currentSelections
+                    .map(code => sectors.find(sector => sector.SectorIndexCode === code))
+                    .filter(sector => sector);
+
+                // 获取当前 THSSectorIndex 过滤的板块
+                const filteredSectors = selectedTHS
                     ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
                     : sectors;
+
+                // 合并已选择的板块和过滤的板块，并去重
+                const allSectors = [
+                    ...selectedSectors,
+                    ...filteredSectors.filter(
+                        sector => !selectedSectors.some(s => s.SectorIndexCode === sector.SectorIndexCode)
+                    )
+                ];
+
+                // 更新 sector_name 选项
+                sectorNameSelect.innerHTML = '';
                 allSectors.forEach(sector => {
                     const option = document.createElement('option');
                     option.value = sector.SectorIndexCode;
@@ -152,14 +189,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     sectorNameSelect.appendChild(option);
                 });
 
-                // 重新初始化 Select2
-                $('#sector_name').select2({
-                    placeholder: 'Search a sector',
-                    allowClear: true,
-                    multiple: true
-                });
-
-                // 恢复当前选择
+                // 触发 Select2 更新
+                $('#sector_name').trigger('select2:updated');
                 $('#sector_name').val(currentSelections).trigger('change');
                 sectorCodeInput.value = currentSelections.join(',');
                 saveState();
@@ -179,8 +210,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('typeFilter element not found');
             }
         })
-        .catch(error => console.error('Error fetching sectors:', error));
+        .catch(error => {
+                    console.error('Error fetching sectors:', error);
+                    alert('无法加载板块数据，请稍后重试');
+                })
+        .finally(() => {
+            hideLoadingSpinner(); // 无论成功或失败，隐藏动画
+        });
 });
+
+// 显示加载动画
+function showLoadingSpinner(isFetchData = false) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'block';
+    }
+    // 根据上下文禁用按钮
+    const fetchButton = document.getElementById('fetchDataBtn');
+    const refreshButton = document.getElementById('refreshRealtimeBtn');
+    if (isFetchData) {
+        if (fetchButton) fetchButton.disabled = true;
+        if (refreshButton) refreshButton.disabled = true;
+    } else {
+        if (fetchButton) fetchButton.disabled = true; // 仅禁用 fetchDataBtn
+    }
+}
+
+// 隐藏加载动画
+function hideLoadingSpinner(isFetchData = false) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'none';
+    }
+    // 根据上下文启用按钮
+    const fetchButton = document.getElementById('fetchDataBtn');
+    const refreshButton = document.getElementById('refreshRealtimeBtn');
+    if (isFetchData) {
+        if (fetchButton) fetchButton.disabled = false;
+        if (refreshButton) refreshButton.disabled = false;
+    } else {
+        if (fetchButton) fetchButton.disabled = false; // 仅启用 fetchDataBtn
+    }
+}
 
 function fetchData() {
     const date = document.getElementById('date').value;
@@ -191,6 +262,8 @@ function fetchData() {
         alert('Please enter a date and select at least one sector');
         return;
     }
+
+    showLoadingSpinner(); // 显示加载动画
 
     const url = `${BASE_URL}/api/stock_data?date=${date}&sector_codes=${encodeURIComponent(sectorCodes)}`;
     console.log('Fetching data with URL:', url);
@@ -212,11 +285,14 @@ function fetchData() {
             applyFilters(); // 直接调用 applyFilters
         })
         .catch(error => {
-            console.error('Error fetching data:', error);
-            stockData = [];
-            filteredData = [];
-            renderTable();
-            saveState();
+                    console.error('Error fetching data:', error);
+                    stockData = [];
+                    filteredData = [];
+                    renderTable();
+                    saveState();
+                })
+        .finally(() => {
+            hideLoadingSpinner(); // 无论成功或失败，隐藏动画
         });
 }
 

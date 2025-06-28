@@ -67,7 +67,7 @@ def get_stock_data():
             # 修改 3：简化实时数据获取，模仿 limitup_unfilled_orders.py
             from blueprints.stock_pool_manager import global_updater
             realtime_data = global_updater.get_realtime_data(stock_codes, source='mairui', caller='stock_data')
-            logger.debug(f"Realtime data: {realtime_data}")
+            logger.debug(f"Realtime data") #: {realtime_data}
 
 
             stock_data = []

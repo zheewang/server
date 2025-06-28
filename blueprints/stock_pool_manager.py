@@ -330,7 +330,7 @@ class RealtimeUpdater:
                                     self.stocks_pool[code]['last_updated'] = current_time
                                 else:
                                     self.stocks_pool[code] = {'sources': {caller}, 'last_updated': current_time}
-                            logger.debug(f"[global] Updated stocks_pool: {self.stocks_pool}")
+                            logger.debug(f"[global] Updated stocks_pool: ") #{self.stocks_pool}
                         updated = True
                     except gevent.queue.Empty:
                         break

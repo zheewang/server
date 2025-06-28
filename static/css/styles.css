@@ -352,4 +352,34 @@ td:hover .tooltip {
         gap: 10px;
         text-align: center;
     }
+
+/* 加载动画的旋转圆圈 */
+.spinner {
+    border: 4px solid #f3f3f3; /* 背景颜色 */
+    border-top: 4px solid #3498db; /* 旋转部分的颜色 */
+    border-radius: 50%; /* 圆形 */
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite; /* 持续旋转动画 */
+    margin: 0 auto; /* 居中 */
+}
+
+/* 定义旋转动画 */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 加载提示文字样式 */
+#loadingSpinner p {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #666;
+}    
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 }
