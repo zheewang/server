@@ -1,4 +1,3 @@
-
 import {
     initPagination,
     updatePagination,
@@ -19,7 +18,6 @@ let sortRules = [];
 let recentDates = [];
 let sectors = [];
 
-
 const BASE_URL = `http://${HOST}:${PORT}`;
 const PAGE_KEY = 'stock_dashboard';
 
@@ -38,21 +36,19 @@ function throttle(fn, delay) {
 // 创建节流版本的 saveState，每 5 秒最多保存一次
 const throttledSaveState = throttle(saveState, 5000);
 
-
 // 显示加载动画
 function showLoadingSpinner(isFetchData = false) {
     const spinner = document.getElementById('loadingSpinner');
     if (spinner) {
         spinner.style.display = 'block';
     }
-    // 根据上下文禁用按钮
     const fetchButton = document.getElementById('fetchDataBtn');
     const refreshButton = document.getElementById('refreshRealtimeBtn');
     if (isFetchData) {
         if (fetchButton) fetchButton.disabled = true;
         if (refreshButton) refreshButton.disabled = true;
     } else {
-        if (fetchButton) fetchButton.disabled = true; // 仅禁用 fetchDataBtn
+        if (fetchButton) fetchButton.disabled = true;
     }
 }
 
@@ -62,26 +58,24 @@ function hideLoadingSpinner(isFetchData = false) {
     if (spinner) {
         spinner.style.display = 'none';
     }
-    // 根据上下文启用按钮
     const fetchButton = document.getElementById('fetchDataBtn');
     const refreshButton = document.getElementById('refreshRealtimeBtn');
     if (isFetchData) {
         if (fetchButton) fetchButton.disabled = false;
         if (refreshButton) refreshButton.disabled = false;
     } else {
-        if (fetchButton) fetchButton.disabled = false; // 仅启用 fetchDataBtn
+        if (fetchButton) fetchButton.disabled = false;
     }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, registering handler');
-    // 注册实时更新处理
     registerUpdateHandler('realtime_update', 'StockCode', (data) => {
         updateData(data, stockData, 'StockCode');
         applyFilters();
         renderTable();
         throttledSaveState();
-        hideLoadingSpinner(true); // WebSocket 更新后隐藏动画
+        hideLoadingSpinner(true);
     });
 
     makeTableSortable();
@@ -94,16 +88,21 @@ document.addEventListener('DOMContentLoaded', function() {
         stockData = savedState.stockData || [];
         filteredData = savedState.filteredData || [...stockData];
         sortRules = savedState.sortRules || [];
+        recentDates = savedState.recentDates || [];
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('date').value = savedState.date || '';
         document.getElementById('th_sector_index').value = savedState.thSectorIndex || '';
         document.getElementById('sector_code').value = savedState.sectorCodes ? savedState.sectorCodes.join(',') : '';
         document.getElementById('typeFilter').value = savedState.typeFilter || 'All';
+        console.log('Restored state:', { sortRules, recentDates });
+
         if (stockData.length > 0) {
             populateTypeFilter();
             updatePagination(pagination, filteredData.length);
             updateTableHeaders();
+            updateSortIndicators(sortRules);
             renderTable();
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);
         }
     } else {
         stockData = [];
@@ -111,9 +110,8 @@ document.addEventListener('DOMContentLoaded', function() {
         renderTable();
     }
 
-    showLoadingSpinner(); // 显示加载动画
+    showLoadingSpinner();
 
-    // 获取板块数据
     fetch(`${BASE_URL}/api/sectors`)
         .then(response => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -130,10 +128,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 thsSelect.appendChild(option);
             });
 
-            // 根据 th_sector_index 或保存的状态填充 sector_name 选项
             const selectedTHS = savedState?.thSectorIndex || thsSelect.value;
             const sectorNameSelect = document.getElementById('sector_name');
-            sectorNameSelect.innerHTML = ''; // 清空现有选项
+            sectorNameSelect.innerHTML = '';
             const currentSelections = savedState?.sectorCodes || [];
             const selectedSectors = currentSelections
                 .map(code => sectors.find(sector => sector.SectorIndexCode === code))
@@ -155,14 +152,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 sectorNameSelect.appendChild(option);
             });
 
-            // 初始化 Select2
             $('#sector_name').select2({
                 placeholder: 'Search a sector',
                 allowClear: true,
                 multiple: true
             });
 
-            // 恢复 sector_name 的保存状态
             if (savedState?.sectorCodes) {
                 const validCodes = savedState.sectorCodes.filter(code =>
                     Array.from(sectorNameSelect.options).some(opt => opt.value === code)
@@ -174,13 +169,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('sector_code').value = validCodes.join(',');
             }
 
-            // 绑定事件
             bindPerPageInput(pagination, filteredData, renderTable, saveState);
             bindSortEvents(filteredData, sortRules, renderTable, saveState);
 
             document.getElementById('fetchDataBtn')?.addEventListener('click', fetchData);
             document.getElementById('refreshRealtimeBtn')?.addEventListener('click', () => {
                 console.log('Emitting refresh_realtime_data');
+                showLoadingSpinner(true);
                 window.socket.emit('refresh_realtime_data', { dashboards: ['stock_dashboard'] });
             });
 
@@ -188,26 +183,18 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('nextPage')?.addEventListener('click', () => changePage(pagination, 1, renderTable));
             document.getElementById('search')?.addEventListener('input', applyFilters);
 
-            // 处理 th_sector_index 变化
             document.getElementById('th_sector_index').addEventListener('change', function() {
                 const selectedTHS = this.value;
                 const sectorNameSelect = document.getElementById('sector_name');
                 const sectorCodeInput = document.getElementById('sector_code');
 
-                // 保存当前选择
                 const currentSelections = $('#sector_name').val() || [];
-
-                // 获取当前已选择的板块代码对应的完整板块信息
                 const selectedSectors = currentSelections
                     .map(code => sectors.find(sector => sector.SectorIndexCode === code))
                     .filter(sector => sector);
-
-                // 获取当前 THSSectorIndex 过滤的板块
                 const filteredSectors = selectedTHS
                     ? sectors.filter(sector => sector.THSSectorIndex === selectedTHS)
                     : sectors;
-
-                // 合并已选择的板块和过滤的板块，并去重
                 const allSectors = [
                     ...selectedSectors,
                     ...filteredSectors.filter(
@@ -215,7 +202,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     )
                 ];
 
-                // 更新 sector_name 选项
                 sectorNameSelect.innerHTML = '';
                 allSectors.forEach(sector => {
                     const option = document.createElement('option');
@@ -225,14 +211,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     sectorNameSelect.appendChild(option);
                 });
 
-                // 触发 Select2 更新
                 $('#sector_name').trigger('select2:updated');
                 $('#sector_name').val(currentSelections).trigger('change');
                 sectorCodeInput.value = currentSelections.join(',');
                 saveState();
             });
 
-            // 处理 sector_name 变化
             $('#sector_name').on('change', function() {
                 const selectedCodes = $(this).val() || [];
                 document.getElementById('sector_code').value = selectedCodes.join(',');
@@ -247,14 +231,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
-                    console.error('Error fetching sectors:', error);
-                    alert('无法加载板块数据，请稍后重试');
-                })
+            console.error('Error fetching sectors:', error);
+            alert('无法加载板块数据，请稍后重试');
+        })
         .finally(() => {
-            hideLoadingSpinner(); // 无论成功或失败，隐藏动画
+            hideLoadingSpinner();
         });
 });
-
 
 function fetchData() {
     const date = document.getElementById('date').value;
@@ -266,7 +249,7 @@ function fetchData() {
         return;
     }
 
-    showLoadingSpinner(); // 显示加载动画
+    showLoadingSpinner();
 
     const url = `${BASE_URL}/api/stock_data?date=${date}&sector_codes=${encodeURIComponent(sectorCodes)}`;
     console.log('Fetching data with URL:', url);
@@ -284,18 +267,22 @@ function fetchData() {
                 RealtimePrice: item.RealtimePrice ?? 'N/A'
             }));
             filteredData = [...stockData];
+            recentDates = []; // 重置 recentDates
+            sortRules = sortRules.filter(rule => !rule.field.startsWith('recentChange')); // 移除动态列排序
             populateTypeFilter();
-            applyFilters(); // 直接调用 applyFilters
+            applyFilters();
         })
         .catch(error => {
-                    console.error('Error fetching data:', error);
-                    stockData = [];
-                    filteredData = [];
-                    renderTable();
-                    saveState();
-                })
+            console.error('Error fetching data:', error);
+            stockData = [];
+            filteredData = [];
+            recentDates = [];
+            sortRules = sortRules.filter(rule => !rule.field.startsWith('recentChange'));
+            renderTable();
+            saveState();
+        })
         .finally(() => {
-            hideLoadingSpinner(); // 无论成功或失败，隐藏动画
+            hideLoadingSpinner();
         });
 }
 
@@ -326,31 +313,44 @@ function applyFilters() {
     updateTableHeaders();
     updatePagination(pagination, filteredData.length);
     renderTable();
-    bindSortEvents(filteredData, sortRules, renderTable, saveState); // 移到此处
+    bindSortEvents(filteredData, sortRules, renderTable, saveState);
     saveState();
 }
 
 function updateTableHeaders() {
-    if (filteredData.length > 0 && filteredData[0].recent_data && filteredData[0].recent_data.length > 0) {
-        recentDates = filteredData[0].recent_data.map(item => item.trading_Date).slice(0, 3);
-        const thead = document.getElementById('tableHeader').querySelector('tr');
-        while (thead.children.length > 10) {
-            thead.removeChild(thead.lastChild);
-        }
-        recentDates.forEach((date, index) => {
-            const th = document.createElement('th');
-            th.textContent = date;
-            th.dataset.sort = `recentChange${index}`;
-            th.dataset.text = date;
-            thead.appendChild(th);
-        });
-        bindSortEvents(filteredData, sortRules, renderTable, saveState);
-    } else {
-        const thead = document.getElementById('tableHeader').querySelector('tr');
-        while (thead.children.length > 10) {
-            thead.removeChild(thead.lastChild);
-        }
+    const thead = document.getElementById('tableHeader')?.querySelector('tr');
+    if (!thead) return;
+
+    while (thead.children.length > 10) {
+        thead.removeChild(thead.lastChild);
     }
+
+    if (filteredData.length === 0 || !filteredData[0].recent_data || filteredData[0].recent_data.length === 0) {
+        console.warn('No recent_data available for dynamic headers');
+        recentDates = [];
+    } else if (!recentDates.length) {
+        recentDates = filteredData[0].recent_data.map(item => item.trading_Date).slice(0, 3);
+    }
+
+    console.log('Updating table headers with recentDates:', recentDates);
+    recentDates.forEach((date, index) => {
+        const th = document.createElement('th');
+        th.textContent = date;
+        th.dataset.sort = `recentChange${index}`;
+        th.dataset.text = date;
+        thead.appendChild(th);
+    });
+
+    sortRules = sortRules.filter(rule => {
+        if (rule.field.startsWith('recentChange')) {
+            const index = parseInt(rule.field.replace('recentChange', ''));
+            return index < recentDates.length;
+        }
+        return true;
+    });
+
+    updateSortIndicators(sortRules);
+    bindSortEvents(filteredData, sortRules, renderTable, saveState);
 }
 
 function renderTable() {
@@ -465,7 +465,6 @@ function renderTable() {
 }
 
 function saveState() {
-    // 修改 12：保存多选板块代码
     const state = {
         currentPage: pagination.currentPage,
         perPage: pagination.perPage,
@@ -475,6 +474,7 @@ function saveState() {
         date: document.getElementById('date').value,
         thSectorIndex: document.getElementById('th_sector_index').value,
         sectorCodes: $('#sector_name').val() || [],
+        recentDates
     };
     sessionStorage.setItem(`${PAGE_KEY}_state`, JSON.stringify(state));
 }

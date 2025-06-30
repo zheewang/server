@@ -39,18 +39,20 @@ document.addEventListener('DOMContentLoaded', function() {
         pagination.currentPage = savedState.currentPage || 1;
         pagination.perPage = savedState.perPage || 30;
         stockData = savedState.stockData || [];
-        filteredData = [...stockData].filter(stock => !deletedStocks.has(stock.StockCode)); // 明确初始化
+        filteredData = savedState.filteredData || [...stockData]; 
         sortRules = savedState.sortRules || [];
         deletedStocks = new Set(savedState.deletedStocks || []);
         document.getElementById('perPage').value = pagination.perPage;
         document.getElementById('newStockCode').value = savedState.newStockCode || '';
+
         if (stockData.length > 0) {
-            console.log('Loaded from sessionStorage:', stockData.length, 'items');
+            // 渲染
             updatePagination(pagination, filteredData.length);
             renderTable();
-        } else {
-            fetchData();
+            updateSortIndicators(sortRules);
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);
         }
+          
     } else {
         fetchData();
     }
@@ -138,7 +140,7 @@ function fetchData(newStockCode = null) {
             updatePagination(pagination, filteredData.length);
             renderTable();
             saveState();
-            document.getElementById('debugText').textContent = JSON.stringify(data, null, 2);
+            //document.getElementById('debugText').textContent = JSON.stringify(data, null, 2);
             // 重新绑定排序事件
             setTimeout(() => {
                 makeTableSortable();
@@ -209,13 +211,6 @@ function saveStockCodes() {
             alert('Failed to save stock codes');
             saveState();
         });
-}
-
-function updateTableHeaders() {
-    const thead = document.getElementById('tableHeader').querySelector('tr');
-    while (thead.children.length > 13) {
-        thead.removeChild(thead.lastChild);
-    }
 }
 
 function renderTable() {
@@ -301,6 +296,24 @@ function renderTable() {
         makeTableSortable();
         bindSortEvents(filteredData, sortRules, renderTable, saveState);
     }, 0);
+}
+
+function sortDataByRules(data, rules) {
+    if (!Array.isArray(rules) || rules.length === 0) return data;
+    return [...data].sort((a, b) => {
+        for (const rule of rules) {
+            const { field, direction } = rule;
+            if (!field || !['asc', 'desc'].includes(direction)) continue;
+            const valA = a[field];
+            const valB = b[field];
+            if (valA === valB) continue;
+            if (valA == null) return direction === 'asc' ? 1 : -1;
+            if (valB == null) return direction === 'asc' ? -1 : 1;
+            if (valA < valB) return direction === 'asc' ? -1 : 1;
+            if (valA > valB) return direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+    });
 }
 
 function saveState() {

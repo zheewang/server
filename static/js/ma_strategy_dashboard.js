@@ -67,12 +67,10 @@ document.addEventListener('DOMContentLoaded', function() {
             updatePagination(pagination, filteredData.length);
             updateTableHeaders();
             renderTable();
+            updateSortIndicators(sortRules);
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);             
         }
     }
-
-    bindPerPageInput(pagination, filteredData, renderTable, saveState);
-
-  
 
     bindSortEvents(filteredData, sortRules, renderTable, saveState);
 

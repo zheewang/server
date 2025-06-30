@@ -48,13 +48,20 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('streakFilter').value = savedState.streakFilter || 'All';
         if (stockData.length > 0) {
             console.log('Loaded from sessionStorage:', stockData.length, 'items');
+            // 排序规则提前设定
+            sortRules = savedState.sortRules || [];
+
             populateStreakFilter();
             updatePagination(pagination, filteredData.length);
-            applyFilters();
+            //applyFilters();     // sortData 会生效
             renderTable();
-        }
-    } else {
+
+            updateSortIndicators(sortRules);
+            bindSortEvents(filteredData, sortRules, renderTable, saveState);
+        } else {
         fetchData();
+        } 
+
     }
 
     // 延迟绑定排序事件，确保 DOM 和数据就绪
@@ -317,8 +324,10 @@ function renderTable() {
     rowCount.textContent = `Rows: ${filteredData.length}`;
 
     // 重新绑定排序事件
+    // ✅ 替换为延迟绑定
     setTimeout(() => {
         makeTableSortable();
+        updateSortIndicators(sortRules);
         bindSortEvents(filteredData, sortRules, renderTable, saveState);
     }, 0);
 }

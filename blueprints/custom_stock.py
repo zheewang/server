@@ -75,7 +75,7 @@ def get_custom_stock_data():
         elif is_trading_day and beijing_time.hour < 16:
             display_date = get_nearest_trading_date(target_date - timedelta(days=1), TradingDay)
             yesterday = display_date
-        elif is_trading_day and beijing_time.hour >= 18:
+        elif is_trading_day and beijing_time.hour >= 21:
             display_date = target_date
             yesterday = get_nearest_trading_date(target_date - timedelta(days=1), TradingDay)
         else:
